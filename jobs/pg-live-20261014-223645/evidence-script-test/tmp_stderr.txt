@@ -1,0 +1,4 @@
+src.store: ERROR: DATABASE_URL is not set.
+  Provide it via the environment or config/database.local.env (gitignored).
+  Format (see config/database.env.example):
+    DATABASE_URL=postgresql://USER:PASSWORD@HOST/DATABASE?sslmode=require

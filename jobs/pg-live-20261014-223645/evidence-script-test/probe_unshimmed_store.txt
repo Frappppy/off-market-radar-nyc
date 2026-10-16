@@ -1,0 +1,9 @@
+﻿COMMAND: python -m src.store --in jobs\pg-live-20261014-223645\cleaned --run-id pg-live-20261014-223645
+EXIT CODE: 1
+--- stdout ---
+
+--- stderr ---
+src.store: ERROR: OperationalError: the connection is closed
+src.store: WARNING: could not mark run failed: the connection is closed
+
+

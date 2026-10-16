@@ -1,0 +1,14 @@
+﻿COMMAND: .venv\Scripts\python.exe jobs\pg-live-20261014-223645\run_store_shim.py --in jobs\pg-live-20261014-223645\cleaned --run-id pg-live-20261014-223645
+EXIT CODE: 0
+--- stdout ---
+
+--- stderr ---
+python.exe : [shim] psycopg.Connection.__exit__ patched: commit/rollback WITHOUT close (psycopg 3.3.6 upstream closes 
+non-pooled connections; see validation_report.md)
+At line:9 char:1
++ & $py "jobs\pg-live-20261014-223645\run_store_shim.py" --in "jobs\pg- ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ([shim] psycopg....tion_report.md):String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+

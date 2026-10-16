@@ -1,0 +1,4 @@
+﻿Compare-Object: evidence/26_prices_after_run2.txt (run 2) vs evidence/33_prices_after_run3.txt (run 3)
+=> zillow|Z-1001|price=439500|snap=2026-10-14
+<= zillow|Z-1001|price=464500|snap=2026-10-14
+DIFF ENTRY COUNT: 2  (2 = exactly one line changed)

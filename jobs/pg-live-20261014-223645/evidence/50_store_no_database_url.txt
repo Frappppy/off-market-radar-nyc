@@ -1,0 +1,16 @@
+﻿COMMAND: .venv\Scripts\python.exe -m src.store --in jobs\pg-live-20261014-223645\cleaned --run-id pg-live-20261014-223645 (DATABASE_URL not set)
+EXIT CODE: 2
+--- stdout ---
+
+--- stderr ---
+python.exe : src.store: ERROR: DATABASE_URL is not set.
+At line:7 char:1
++ & $py -m src.store --in "jobs\pg-live-20261014-223645\cleaned" --run- ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (src.store: ERRO...URL is not set.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+  Provide it via the environment or config/database.local.env (gitignored).
+  Format (see config/database.env.example):
+    DATABASE_URL=postgresql://USER:PASSWORD@HOST/DATABASE?sslmode=require
+

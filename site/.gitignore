@@ -1,0 +1,12 @@
+node_modules/
+.next/
+out/
+shots/
+.env*.local
+*.pem
+.neon
+
+.vercel
+.env*
+# ...but the template is documentation, not a secret.
+!.env.example

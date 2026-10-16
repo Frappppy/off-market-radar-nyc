@@ -1,0 +1,49 @@
+# Daily pipeline: scrape -> clean -> store (UTC 10:00).
+#
+# Secrets are referenced ONLY through GitHub's encrypted secrets context below —
+# never hard-coded, never written to any file. See docs/deploy_github.md for setup.
+#
+# Note: the run steps use the venv interpreter explicitly. `py -3` would resolve
+# to the runner's base Python (verified: py ignores VIRTUAL_ENV) and would miss
+# the packages installed into .venv.
+
+name: daily_pipeline
+
+on:
+  schedule:
+    - cron: "0 10 * * *"   # 10:00 UTC every day
+  workflow_dispatch:        # manual runs for testing
+
+concurrency:
+  group: daily-pipeline
+  cancel-in-progress: false
+
+jobs:
+  daily:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      DATAIMPULSE_LOGIN: ${{ secrets.DATAIMPULSE_LOGIN }}
+      DATAIMPULSE_PASSWORD: ${{ secrets.DATAIMPULSE_PASSWORD }}
+      DATAIMPULSE_HOST: ${{ secrets.DATAIMPULSE_HOST }}
+      DATAIMPULSE_PORT: ${{ secrets.DATAIMPULSE_PORT }}
+      DATAIMPULSE_COUNTRY: ${{ secrets.DATAIMPULSE_COUNTRY }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+          cache: pip
+
+      - name: Create venv
+        run: py -3 -m venv .venv
+
+      - name: Install dependencies
+        run: .venv\Scripts\python.exe -m pip install -r requirements.txt
+
+      - name: Run daily pipeline
+        run: .venv\Scripts\python.exe scripts\run_daily.py

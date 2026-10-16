@@ -1,0 +1,96 @@
+## src.store - run_id `pg-fix-20261015-122203`
+- started_at: 2026-10-15T06:22:12+00:00
+- input: `jobs\pg-fix-20261015-122203\cleaned` (listings_2026-10-14.parquet)
+- records_in: 10
+- target: DATABASE_URL (value never logged)
+- schema: sql/schema.sql (idempotent)
+- pipeline_runs: status `running` -> `success`
+- listings upserted (ON CONFLICT source,listing_id): 10
+- listing_snapshots upserted (ON CONFLICT source,listing_id,snapshot_date): 10
+- records_scraped: 10
+- finished_at: 2026-10-15T06:22:12+00:00
+- status: `success`
+## src.store - run_id `pg-fix-20261015-122203`
+- started_at: 2026-10-15T06:22:14+00:00
+- input: `jobs\pg-fix-20261015-122203\cleaned` (listings_2026-10-14.parquet)
+- records_in: 10
+- target: DATABASE_URL (value never logged)
+- schema: sql/schema.sql (idempotent)
+- pipeline_runs: status `running` -> `success`
+- listings upserted (ON CONFLICT source,listing_id): 10
+- listing_snapshots upserted (ON CONFLICT source,listing_id,snapshot_date): 10
+- records_scraped: 10
+- finished_at: 2026-10-15T06:22:14+00:00
+- status: `success`
+## src.store - run_id `pg-fix-20261015-122203`
+- started_at: 2026-10-15T06:22:16+00:00
+- input: `jobs\pg-fix-20261015-122203\cleaned` (listings_2026-10-14.parquet)
+- records_in: 10
+- target: DATABASE_URL (value never logged)
+- schema: sql/schema.sql (idempotent)
+- pipeline_runs: status `running` -> `success`
+- listings upserted (ON CONFLICT source,listing_id): 10
+- listing_snapshots upserted (ON CONFLICT source,listing_id,snapshot_date): 10
+- records_scraped: 10
+- finished_at: 2026-10-15T06:22:16+00:00
+- status: `success`
+## src.store - run_id `pg-fix-20261015-122203`
+- started_at: 2026-10-15T06:22:20+00:00
+- input: `jobs\pg-fix-20261015-122203\cleaned-modified` (listings_2026-10-14.parquet)
+- records_in: 10
+- target: DATABASE_URL (value never logged)
+- schema: sql/schema.sql (idempotent)
+- pipeline_runs: status `running` -> `success`
+- listings upserted (ON CONFLICT source,listing_id): 10
+- listing_snapshots upserted (ON CONFLICT source,listing_id,snapshot_date): 10
+- records_scraped: 10
+- finished_at: 2026-10-15T06:22:20+00:00
+- status: `success`
+## src.store - run_id `pg-fix-20261015-122203`
+- started_at: 2026-10-15T06:22:36+00:00
+- input: `jobs\pg-fix-20261015-122203\cleaned` (listings_2026-10-14.parquet)
+- records_in: 10
+- target: DATABASE_URL (value never logged)
+- schema: sql/schema.sql (idempotent)
+- pipeline_runs: status `running` -> `success`
+- listings upserted (ON CONFLICT source,listing_id): 10
+- listing_snapshots upserted (ON CONFLICT source,listing_id,snapshot_date): 10
+- records_scraped: 10
+- finished_at: 2026-10-15T06:22:36+00:00
+- status: `success`
+## src.store - run_id `pg-fix-20261015-122203`
+- started_at: 2026-10-15T06:22:38+00:00
+- input: `jobs\pg-fix-20261015-122203\cleaned` (listings_2026-10-14.parquet)
+- records_in: 10
+- target: DATABASE_URL (value never logged)
+- schema: sql/schema.sql (idempotent)
+- pipeline_runs: status `running` -> `success`
+- listings upserted (ON CONFLICT source,listing_id): 10
+- listing_snapshots upserted (ON CONFLICT source,listing_id,snapshot_date): 10
+- records_scraped: 10
+- finished_at: 2026-10-15T06:22:38+00:00
+- status: `success`
+## src.store - run_id `pg-fix-20261015-122203`
+- started_at: 2026-10-15T06:22:39+00:00
+- input: `jobs\pg-fix-20261015-122203\cleaned` (listings_2026-10-14.parquet)
+- records_in: 10
+- target: DATABASE_URL (value never logged)
+- schema: sql/schema.sql (idempotent)
+- pipeline_runs: status `running` -> `success`
+- listings upserted (ON CONFLICT source,listing_id): 10
+- listing_snapshots upserted (ON CONFLICT source,listing_id,snapshot_date): 10
+- records_scraped: 10
+- finished_at: 2026-10-15T06:22:39+00:00
+- status: `success`
+## src.store - run_id `pg-fix-20261015-122203`
+- started_at: 2026-10-15T06:22:42+00:00
+- input: `jobs\pg-fix-20261015-122203\cleaned-modified` (listings_2026-10-14.parquet)
+- records_in: 10
+- target: DATABASE_URL (value never logged)
+- schema: sql/schema.sql (idempotent)
+- pipeline_runs: status `running` -> `success`
+- listings upserted (ON CONFLICT source,listing_id): 10
+- listing_snapshots upserted (ON CONFLICT source,listing_id,snapshot_date): 10
+- records_scraped: 10
+- finished_at: 2026-10-15T06:22:42+00:00
+- status: `success`

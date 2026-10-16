@@ -1,0 +1,44 @@
+# ---------------------------------------------------------------------------
+# secrets: never commit (real values live only in these gitignored files)
+#   config/dataimpulse.local.env   DATAIMPULSE_* proxy credentials
+#   config/database.local.env      Neon DATABASE_URL (write-capable)
+#   site/.env.local                Neon DATABASE_URL for the website
+#   site/.env.readonly.local       read-only role DSN used by Vercel
+# ---------------------------------------------------------------------------
+*.local.env
+.env
+.env.*
+
+# ---- python ---------------------------------------------------------------
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+*.egg-info/
+.mypy_cache/
+
+# ---- node / next (site/) --------------------------------------------------
+node_modules/
+.next/
+out/
+site/.vercel/
+site/.neon
+site/shots/
+
+# ---- scraped page dumps ---------------------------------------------------
+# Raw HTML / embedded-JSON captures from the source site. Kept on disk as
+# evidence, never redistributed: see docs/robots_precheck.md.
+jobs/probe/
+
+# ---- scraped data (evidence stays on disk, not in git) --------------------
+jobs/*/raw/
+jobs/*/cleaned/
+jobs/*/cleaned-modified/
+
+# ---- power bi binaries (source lives in dashboard/ as text) ---------------
+*.pbix
+*.pbir
+
+# ---- local tool state -----------------------------------------------------
+.webmesh-mcp/

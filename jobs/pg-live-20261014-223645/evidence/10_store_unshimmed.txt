@@ -1,0 +1,12 @@
+﻿COMMAND: .venv\Scripts\python.exe -m src.store --in jobs\pg-live-20261014-223645\cleaned --run-id pg-live-20261014-223645
+EXIT CODE: 1
+--- OUTPUT (stdout+stderr) ---
+python.exe : src.store: ERROR: OperationalError: the connection is closed
+At line:7 char:8
++ $out = & $py -m src.store --in "jobs\pg-live-20261014-223645\cleaned" ...
++        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (src.store: ERRO...ction is closed:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+src.store: WARNING: could not mark run failed: the connection is closed
+

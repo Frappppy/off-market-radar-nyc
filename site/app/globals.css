@@ -1,0 +1,44 @@
+@import "tailwindcss";
+
+@layer components {
+  /* Lev-inspired surface: lifted near-black card, hairline border, large radius */
+  .panel {
+    @apply rounded-xl border border-white/10 bg-[#141416];
+  }
+  /* Small-caps section label above headlines and stat numerals */
+  .eyebrow {
+    @apply text-[11px] font-semibold uppercase tracking-[0.14em] text-zinc-500;
+  }
+}
+
+:root {
+  color-scheme: dark;
+  --high: #d62728;
+  --medium: #e6a817;
+  --low: #9aa0a6;
+}
+
+body {
+  background: #09090b;
+  color: #f4f4f5;
+}
+
+input, select {
+  background-color: #18181b;
+  color: #f4f4f5;
+  border-color: #3f3f46;
+}
+
+input:disabled, select:disabled {
+  background-color: #27272a;
+  color: #71717a;
+}
+
+.maplibre-pin {
+  width: 14px;
+  height: 14px;
+  border-radius: 9999px;
+  border: 2px solid #fff;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.4);
+  cursor: pointer;
+}

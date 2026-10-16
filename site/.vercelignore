@@ -1,0 +1,10 @@
+# Never upload credentials or local artifacts.
+# site/.env.local holds a write-capable Neon DSN; site/.env.readonly.local holds
+# the production read-only DSN. Neither may leave this machine except into
+# Vercel's encrypted environment-variable store.
+.env
+.env.*
+node_modules
+.next
+shots
+.vercel

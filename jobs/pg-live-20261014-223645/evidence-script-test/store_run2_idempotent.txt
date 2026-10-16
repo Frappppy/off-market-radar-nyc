@@ -1,0 +1,8 @@
+﻿COMMAND: python jobs\pg-live-20261014-223645\run_store_shim.py --in jobs\pg-live-20261014-223645\cleaned --run-id pg-live-20261014-223645
+EXIT CODE: 0
+--- stdout ---
+
+--- stderr ---
+[shim] psycopg.Connection.__exit__ patched: commit/rollback WITHOUT close
+
+

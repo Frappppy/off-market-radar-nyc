@@ -1,0 +1,12 @@
+## src.store - run_id `neon-prod-load-20261016`
+- started_at: 2026-10-16T04:44:19+00:00
+- input: `jobs\smoke-scrape-20261015-084632\cleaned` (listings_2026-10-15.parquet)
+- records_in: 82
+- target: DATABASE_URL (value never logged)
+- schema: sql/schema.sql (idempotent)
+- pipeline_runs: status `running` -> `success`
+- listings upserted (ON CONFLICT source,listing_id): 82
+- listing_snapshots upserted (ON CONFLICT source,listing_id,snapshot_date): 82
+- records_scraped: 82
+- finished_at: 2026-10-16T04:48:52+00:00
+- status: `success`

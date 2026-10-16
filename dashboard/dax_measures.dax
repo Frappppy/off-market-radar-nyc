@@ -1,0 +1,48 @@
+// =============================================================================
+// Project 1: The Off-Market Real Estate Deal Finder
+// Stage 4 -- DAX measures for dashboard/views.sql
+//
+// HOW TO USE (Power BI Desktop):
+//   Home > New measure, then paste ONE "Name = expression" line at a time.
+//   The // comment lines are documentation for this file -- strip them on
+//   paste if your Power BI build rejects comments in the formula bar.
+//
+// TABLE NAMES must match the views in views.sql exactly:
+//   'vw_latest_listings'    (latest snapshot per listing -- map/cards/table)
+//   'vw_zip_price_drop_30d' (zip x day aggregates, last 30 days -- trend)
+// If your model shows a schema prefix (e.g. "public.vw_latest_listings"),
+// adjust the quoted table names to match the Data pane.
+//
+// FORMATTING (Measure tools > Format):
+//   [Avg Price Drop %] and [Avg Price Drop % (30d)] -> Custom: 0.0"%"
+//     (price_drop_pct stores percentage POINTS: 7.1 means 7.1%)
+//   [Property Count], [High Motivation Count] -> Whole number
+//   [Avg DOM] -> Whole number (days)
+//   [Is DOM > 60] -> Whole number (0/1 flag, normally not shown on canvas)
+// =============================================================================
+
+// Property Count -- distinct listings in the latest snapshot; overall KPI card.
+Property Count = DISTINCTCOUNT('vw_latest_listings'[listing_id])
+
+// High Motivation Count -- listings with motivation_score = "High".
+// Powers the "Motivation_Score = High" card and any high-intent filtering.
+High Motivation Count = CALCULATE([Property Count], 'vw_latest_listings'[motivation_score] = "High")
+
+// Avg Price Drop % -- mean price_drop_pct over the latest snapshots.
+// AVERAGE() ignores listings with no prior price (NULL price_drop_pct).
+Avg Price Drop % = AVERAGE('vw_latest_listings'[price_drop_pct])
+
+// Avg DOM -- mean days_on_market over the latest snapshots.
+// AVERAGE() ignores listings with NULL days_on_market.
+Avg DOM = AVERAGE('vw_latest_listings'[days_on_market])
+
+// Is DOM > 60 -- 1 when Avg DOM exceeds 60 days, else 0.
+// Use for conditional formatting (e.g. turn the Avg DOM card red) and as a
+// visual-level filter (set to 1) or slicer-alternative -- see build_guide.md.
+Is DOM > 60 = IF([Avg DOM] > 60, 1, 0)
+
+// Avg Price Drop % (30d) -- Y axis of the trend line. Reads the pre-aggregated
+// view vw_zip_price_drop_30d, which already restricts snapshot_date to the
+// last 30 days in SQL; one row per (zip, snapshot_date), so AVERAGE() over the
+// current visual context returns that zip/day's average drop exactly.
+Avg Price Drop % (30d) = AVERAGE('vw_zip_price_drop_30d'[avg_price_drop_pct])

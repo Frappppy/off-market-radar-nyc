@@ -1,0 +1,9 @@
+{
+  "stage": "store",
+  "run_id": "neon-prod-load-20261016",
+  "records_in": 82,
+  "records_out": 82,
+  "started_at": "2026-10-16T04:44:19+00:00",
+  "finished_at": "2026-10-16T04:48:52+00:00",
+  "status": "success"
+}

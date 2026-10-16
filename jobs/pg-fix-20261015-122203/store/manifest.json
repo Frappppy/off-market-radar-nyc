@@ -1,0 +1,9 @@
+{
+  "stage": "store",
+  "run_id": "pg-fix-20261015-122203",
+  "records_in": 10,
+  "records_out": 10,
+  "started_at": "2026-10-15T06:22:42+00:00",
+  "finished_at": "2026-10-15T06:22:42+00:00",
+  "status": "success"
+}

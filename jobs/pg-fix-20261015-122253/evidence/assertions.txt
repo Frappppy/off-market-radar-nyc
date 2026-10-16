@@ -1,0 +1,33 @@
+﻿live_db_check  run_id=pg-fix-20261015-122253  2026-10-15 12:22:55
+PASS  PostgreSQL 18 accepting connections on 127.0.0.1:55432
+PASS  backend process spawns (psql SELECT 1 round-trip)
+PASS  src.clean produced the fixture cleaned dir
+PASS  cleaned listings_*.parquet present
+PASS  fixture records_out known
+INFO  unshimmed src.store exit=0 (cli.py appears fixed; shim inert)
+PASS  sql/schema.sql applied
+PASS  clean slate after TRUNCATE
+PASS  shim written: jobs/<run>/run_store_shim.py
+PASS  builder written: jobs/<run>/make_modified_price.py
+PASS  run 1 (initial load) exit code
+PASS  run 1: listings count
+PASS  run 1: listing_snapshots count
+PASS  run 1: exactly one pipeline_runs row
+PASS  run 2 (identical re-load) exit code
+PASS  run 2: counts unchanged
+PASS  run 2: still exactly one pipeline_runs row
+PASS  pipeline_runs status=success
+PASS  pipeline_runs records_loaded
+PASS  make_modified_price.py exit code
+PASS  run 3 (modified price) exit code
+PASS  run 3: counts unchanged (no delete+reinsert)
+PASS  exactly ONE snapshot price line changed
+PASS  DO UPDATE wrote price_current_after
+PASS  run 3: still exactly one pipeline_runs row
+PASS  dashboard/views.sql applied
+PASS  SELECT count(*) FROM vw_latest_listings
+PASS  both view definitions present in pg_views
+PASS  SELECT ... FROM vw_zip_price_drop_30d returns rows
+PASS  missing DATABASE_URL -> exit code 2
+PASS  DB untouched by config failure (still 1 success row)
+PASS  server stopped (pg_isready reports no response)

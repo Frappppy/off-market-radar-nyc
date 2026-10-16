@@ -1,0 +1,108 @@
+## src.store - run_id `pg-live-20261014-223645`
+- started_at: 2026-10-14T16:43:51+00:00
+- input: `jobs\pg-live-20261014-223645\cleaned` (listings_2026-10-14.parquet)
+- records_in: 10
+- target: DATABASE_URL (value never logged)
+- schema: sql/schema.sql (idempotent)
+- ERROR: OperationalError: the connection is closed
+- finished_at: 2026-10-14T16:43:51+00:00
+- status: `failed`
+## src.store - run_id `pg-live-20261014-223645`
+- started_at: 2026-10-14T16:50:08+00:00
+- input: `jobs\pg-live-20261014-223645\cleaned` (listings_2026-10-14.parquet)
+- records_in: 10
+- target: DATABASE_URL (value never logged)
+- schema: sql/schema.sql (idempotent)
+- ERROR: OperationalError: the connection is closed
+- finished_at: 2026-10-14T16:50:08+00:00
+- status: `failed`
+## src.store - run_id `pg-live-20261014-223645`
+- started_at: 2026-10-15T05:26:52+00:00
+- input: `jobs\pg-live-20261014-223645\cleaned` (listings_2026-10-14.parquet)
+- records_in: 10
+- target: DATABASE_URL (value never logged)
+- schema: sql/schema.sql (idempotent)
+- ERROR: OperationalError: the connection is closed
+- finished_at: 2026-10-15T05:26:52+00:00
+- status: `failed`
+## src.store - run_id `pg-live-20261014-223645`
+- started_at: 2026-10-15T05:27:59+00:00
+- input: `jobs\pg-live-20261014-223645\cleaned` (listings_2026-10-14.parquet)
+- records_in: 10
+- target: DATABASE_URL (value never logged)
+- schema: sql/schema.sql (idempotent)
+- pipeline_runs: status `running` -> `success`
+- listings upserted (ON CONFLICT source,listing_id): 10
+- listing_snapshots upserted (ON CONFLICT source,listing_id,snapshot_date): 10
+- records_scraped: 10
+- finished_at: 2026-10-15T05:27:59+00:00
+- status: `success`
+## src.store - run_id `pg-live-20261014-223645`
+- started_at: 2026-10-15T05:28:33+00:00
+- input: `jobs\pg-live-20261014-223645\cleaned` (listings_2026-10-14.parquet)
+- records_in: 10
+- target: DATABASE_URL (value never logged)
+- schema: sql/schema.sql (idempotent)
+- pipeline_runs: status `running` -> `success`
+- listings upserted (ON CONFLICT source,listing_id): 10
+- listing_snapshots upserted (ON CONFLICT source,listing_id,snapshot_date): 10
+- records_scraped: 10
+- finished_at: 2026-10-15T05:28:33+00:00
+- status: `success`
+## src.store - run_id `pg-live-20261014-223645`
+- started_at: 2026-10-15T05:28:54+00:00
+- input: `jobs\pg-live-20261014-223645\cleaned-modified` (listings_2026-10-14.parquet)
+- records_in: 10
+- target: DATABASE_URL (value never logged)
+- schema: sql/schema.sql (idempotent)
+- pipeline_runs: status `running` -> `success`
+- listings upserted (ON CONFLICT source,listing_id): 10
+- listing_snapshots upserted (ON CONFLICT source,listing_id,snapshot_date): 10
+- records_scraped: 10
+- finished_at: 2026-10-15T05:28:54+00:00
+- status: `success`
+## src.store - run_id `pg-live-20261014-223645`
+- started_at: 2026-10-15T06:08:27+00:00
+- input: `jobs\pg-live-20261014-223645\cleaned` (listings_2026-10-14.parquet)
+- records_in: 10
+- target: DATABASE_URL (value never logged)
+- schema: sql/schema.sql (idempotent)
+- ERROR: OperationalError: the connection is closed
+- finished_at: 2026-10-15T06:08:27+00:00
+- status: `failed`
+## src.store - run_id `pg-live-20261014-223645`
+- started_at: 2026-10-15T06:08:29+00:00
+- input: `jobs\pg-live-20261014-223645\cleaned` (listings_2026-10-14.parquet)
+- records_in: 10
+- target: DATABASE_URL (value never logged)
+- schema: sql/schema.sql (idempotent)
+- pipeline_runs: status `running` -> `success`
+- listings upserted (ON CONFLICT source,listing_id): 10
+- listing_snapshots upserted (ON CONFLICT source,listing_id,snapshot_date): 10
+- records_scraped: 10
+- finished_at: 2026-10-15T06:08:29+00:00
+- status: `success`
+## src.store - run_id `pg-live-20261014-223645`
+- started_at: 2026-10-15T06:08:31+00:00
+- input: `jobs\pg-live-20261014-223645\cleaned` (listings_2026-10-14.parquet)
+- records_in: 10
+- target: DATABASE_URL (value never logged)
+- schema: sql/schema.sql (idempotent)
+- pipeline_runs: status `running` -> `success`
+- listings upserted (ON CONFLICT source,listing_id): 10
+- listing_snapshots upserted (ON CONFLICT source,listing_id,snapshot_date): 10
+- records_scraped: 10
+- finished_at: 2026-10-15T06:08:31+00:00
+- status: `success`
+## src.store - run_id `pg-live-20261014-223645`
+- started_at: 2026-10-15T06:08:34+00:00
+- input: `jobs\pg-live-20261014-223645\cleaned-modified` (listings_2026-10-14.parquet)
+- records_in: 10
+- target: DATABASE_URL (value never logged)
+- schema: sql/schema.sql (idempotent)
+- pipeline_runs: status `running` -> `success`
+- listings upserted (ON CONFLICT source,listing_id): 10
+- listing_snapshots upserted (ON CONFLICT source,listing_id,snapshot_date): 10
+- records_scraped: 10
+- finished_at: 2026-10-15T06:08:34+00:00
+- status: `success`
