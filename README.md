@@ -143,15 +143,26 @@ city-agnostic (zip/lat-long drive the map).
 | 3. Store | ✅ live-PG unshimmed fix — `with conn.transaction()` per transaction, 31/31 live checks (`jobs/pg-fix-20261015-122253`) |
 | 4. Dashboard | ✅ sqlglot parse + DDL cross-check + DAX↔guide consistency (49 checks via `dashboard/verify_contract.py`) |
 
-### Website — Tier 1 of the roadmap: built, **not yet deployed**
+### Website — Tier 1 of the roadmap: built and **deployed**
 
-The credibility tier (`docs/roadmap.md`) is implemented on `main`: stale listings
-dropped from the data surface (1,019 → 1,011 rows, measured on production), a
-per-listing price-history panel, shareable-filter fixes, and an ingestion health
-card. Nothing is live yet — the SQL migration and the `vw_listing_history` grant
-are a deliberate owner action, and the site has not been redeployed.
+The credibility tier (`docs/roadmap.md`) is implemented and live at
+<https://off-market-radar-nyc.vercel.app> (CLI deployment
+`dpl_815ySD5rr8nmBzteQERCFZx1SD7R`, 2026-10-16): stale listings dropped from the
+data surface (1,019 → 1,011 rows), a per-listing price-history panel, shareable
+filter links, and an ingestion health card that reports the run which produced
+the data. A mistyped `?min_dom=` no longer falls back to the frozen sample.
 
-- Apply order + the two hazards that make it matter: `docs/apply_tier1_migration.md`
+- **Deploys are manual, and a `git push` does not deploy.** The Vercel project
+  has no Git integration — no repo webhook, no GitHub App, no deployments API
+  entries — so pushing to `main` changes the repo and nothing else. Ship with
+  `cd site && vercel --prod` (CLI authenticated as `frappppy`; `site/.vercel`
+  links project `off-market-radar-nyc`). `vercel project ls` / `vercel ls
+  off-market-radar-nyc --prod` show what is live.
+- **The SQL migration and the `vw_listing_history` grant are still unapplied**,
+  by design: the site does not depend on them, so the panel opens and reads
+  "price history unavailable — the history view is not granted yet" rather than
+  breaking the map. Apply order + the two hazards that make it matter:
+  `docs/apply_tier1_migration.md`
 - What was built, decided and left open: `docs/roadmap.md` § "Build status — Tier 1"
 - Prove the migration against a real local PostgreSQL before touching production:
   `scripts/tier1_migration_check.ps1` (apply order, idempotency, the upgrade guard,
