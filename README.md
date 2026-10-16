@@ -117,8 +117,15 @@ city-agnostic (zip/lat-long drive the map).
 - **Zillow**: only robots-**allowed** paths (search pages + homedetails);
   `/api/`, `/graphql/`, and other disallowed paths are never requested.
 - **Proxies ≠ permission**: DataImpulse residential proxies are used for IP
-  hygiene and geo-accuracy (verified US/New York exit), at ≥2s pacing, capped
-  volume, and full 429/Retry-After compliance — portfolio scale, not bulk.
+  hygiene and geo-accuracy (verified US/New York exit), at 5s pacing between
+  **all** requests (2.5x the contractual 2s floor kept in `src/scrape/cli.py`),
+  capped volume, and full 429/Retry-After compliance — portfolio scale, not bulk.
+- **Daily volume**: 30 search pages + 250 detail pages per run (one search page
+  yields ~41 cards). Zillow NYC reports ~22.8k active listings, so a full run
+  samples roughly 5% of the market — a deliberate, documented ceiling, not a
+  full-market scrape. The numbers live in one place: `DAILY_PAGES`,
+  `DAILY_MAX_DETAILS`, `DAILY_DELAY` in `scripts/run_daily.py`, pinned by
+  `tests/test_run_daily.py`.
 - **CAPTCHA is a hard stop**: any PerimeterX/CAPTCHA challenge aborts the run
   (manifest `status: failed`); the pipeline never attempts to defeat it.
 - **Evidence chain**: robots snapshots, per-run manifests, `pages_fetched.json`
@@ -132,6 +139,30 @@ city-agnostic (zip/lat-long drive the map).
 | 2. Clean | ✅ full pytest suite green; end-to-end on fixture verified |
 | 3. Store | ✅ live-PG unshimmed fix — `with conn.transaction()` per transaction, 31/31 live checks (`jobs/pg-fix-20261015-122253`) |
 | 4. Dashboard | ✅ sqlglot parse + DDL cross-check + DAX↔guide consistency (49 checks via `dashboard/verify_contract.py`) |
+
+### Live data reality — what the website actually shows
+
+The Vercel site does read Neon, and the freshness strip reports `live: true`. But
+"live" describes the **plumbing**, not the **coverage**. As of 2026-10-16 the
+database holds a single documented run: **82 listings from a 2-search-page smoke
+scrape** (`jobs/smoke-scrape-20261015-084632`) — about **0.4%** of the ~22.8k
+active NYC listings Zillow reports, on **one** snapshot date.
+
+Consequences worth knowing before you demo it:
+
+- The frozen CSV fallback (`site/public/data/listings_sample.csv`) is
+  byte-identical to that smoke run's cleaned output, so "live Neon" and "demo
+  sample" currently render the same 82 rows. The fallback is a resilience
+  feature, not a second dataset.
+- One snapshot date means **no real time-series yet** — the Trends page is a
+  single point per ZIP until the daily cron accumulates history.
+- **71 of 82 rows carry no price drop** (`price_drop_pct` is null), so the
+  "motivated seller" signal is thin in this sample.
+
+The volume ceiling that addresses this is configured (`DAILY_PAGES` /
+`DAILY_MAX_DETAILS` in `scripts/run_daily.py`) but has not yet been exercised: a
+run attempted on 2026-10-16 was challenged (HTTP 403) on its *first* request and
+aborted, per the compliance rule above.
 
 `docs/websiteplan.md` is the Vercel build plan for the portfolio website
 (kept here for convenience — it is not part of the data pipeline).

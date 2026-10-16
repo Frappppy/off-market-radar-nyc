@@ -21,7 +21,19 @@ returned full server-rendered listing content, no CAPTCHA.
 
 ## Operating limits for every run
 - Only robots-allowed paths (search pages + homedetails) on zillow.com.
-- DataImpulse residential proxy, US exit; ≥2s between requests; honor 429/Retry-After.
-- Portfolio volume: page cap per run (default 5 search pages) + detail-page cap (default 150/run).
+- DataImpulse residential proxy, US exit; honor 429/Retry-After. The contractual
+  floor is 2s between requests (`MIN_DELAY` in `src/scrape/cli.py`); the daily job
+  runs at **5s** (`DAILY_DELAY` in `scripts/run_daily.py`).
+- Portfolio volume — single source of truth is `scripts/run_daily.py`
+  (`DAILY_PAGES` / `DAILY_MAX_DETAILS`): **30 search pages + 250 detail pages**
+  per daily run, i.e. roughly 5% of Zillow's ~22.8k NYC listings. A deliberate
+  ceiling, not a full-market scrape. Override per run with
+  `--pages` / `--max-details` / `--delay`.
 - If a PerimeterX/CAPTCHA challenge appears: STOP the run and report to the user.
   Do not attempt to defeat CAPTCHA.
+  - **Observed 2026-10-16:** a challenge (HTTP 403) was served on the *very first*
+    search request, ~1 minute after a single permitted probe succeeded (41
+    records). The run aborted with `status: failed`, wrote 0 records, and left
+    stages 2-3 skipped — see `jobs/full-scrape-20261016b/run_log.md`. Two
+    consecutive attempts behaved identically. The stop rule fired correctly; no
+    retry-until-it-passes logic exists anywhere in the pipeline by design.

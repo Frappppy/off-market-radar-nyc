@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Daily pipeline orchestrator — Stage 1 scrape -> Stage 2 clean -> Stage 3 store.
 
-    py -3 scripts/run_daily.py [--skip-scrape] [--pages 5] [--max-details 150]
+    py -3 scripts/run_daily.py [--skip-scrape] [--pages 30] [--max-details 250] [--delay 5]
 
 - run_id = UTC timestamp YYYYMMDD-HHMMSS; data + run_log.md land in jobs/<run_id>/.
 - config/*.local.env (gitignored) are loaded into the environment first and never
@@ -21,6 +21,19 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+
+#: Daily-run volume policy — a defensible portfolio-scale sample, NOT bulk.
+#: Zillow NYC reports ~22.8k active listings and one search page yields ~41
+#: cards, so 30 pages is ~1.2k listings (~5% of the market, spread across the
+#: city rather than one borough). The 250 detail fetches enrich the most
+#: promising rows first — the scraper prioritises site-flagged "Price cut"
+#: listings, which is exactly what the motivation score needs.
+#: Pacing is 5s between ALL requests: 2.5x the contractual 2s floor (kept as the
+#: hard floor in src/scrape/cli.py). A full run lands around ~30 min, inside the
+#: workflow's 60-minute timeout. Rationale: docs/robots_precheck.md.
+DAILY_PAGES = 30
+DAILY_MAX_DETAILS = 250
+DAILY_DELAY = 5.0
 
 
 def utc_run_id(now: datetime | None = None) -> str:
@@ -73,8 +86,9 @@ def build_stages(
     *,
     skip_scrape: bool = False,
     raw_dir: Path | None = None,
-    pages: int = 5,
-    max_details: int = 150,
+    pages: int = DAILY_PAGES,
+    max_details: int = DAILY_MAX_DETAILS,
+    delay: float = DAILY_DELAY,
     root: Path = ROOT,
 ) -> list[Stage]:
     cleaned_in = f"jobs/{run_id}/cleaned"
@@ -93,6 +107,7 @@ def build_stages(
                 sys.executable, "-m", "src.scrape",
                 "--pages", str(pages),
                 "--max-details", str(max_details),
+                "--delay", str(delay),
                 "--out", raw_in,
             ],
         )
@@ -200,8 +215,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="reuse the newest existing jobs/*/raw (no scraping), for testing",
     )
-    parser.add_argument("--pages", type=int, default=5, help="search pages for src.scrape")
-    parser.add_argument("--max-details", type=int, default=150, help="detail page cap for src.scrape")
+    parser.add_argument("--pages", type=int, default=DAILY_PAGES, help="search pages for src.scrape")
+    parser.add_argument("--max-details", type=int, default=DAILY_MAX_DETAILS, help="detail page cap for src.scrape")
+    parser.add_argument(
+        "--delay",
+        type=float,
+        default=DAILY_DELAY,
+        help="minimum seconds between requests (src.scrape floors this at 2s)",
+    )
     parser.add_argument("--run-id", default=None, help="override the generated UTC run_id")
     return parser.parse_args(argv)
 
@@ -218,6 +239,7 @@ def main(argv: list[str] | None = None) -> int:
             raw_dir=raw_dir,
             pages=args.pages,
             max_details=args.max_details,
+            delay=args.delay,
         )
     except SystemExit as exc:
         print(f"run_daily: ERROR: {exc}", file=sys.stderr)

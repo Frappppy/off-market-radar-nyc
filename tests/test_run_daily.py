@@ -19,13 +19,20 @@ def test_utc_run_id_format():
     assert re.fullmatch(r"\d{8}-\d{6}", run_id), run_id
 
 
+def test_daily_volume_policy_is_what_the_docs_claim():
+    """The daily job's defaults ARE the compliance/volume policy — pin them."""
+    args = run_daily.parse_args([])
+    assert (args.pages, args.max_details, args.delay) == (30, 250, 5.0)
+
+
 def test_build_stages_matches_contract():
-    stages = run_daily.build_stages("20261014-143000", pages=5, max_details=150)
+    stages = run_daily.build_stages("20261014-143000", pages=5, max_details=150, delay=5.0)
     assert [s.name for s in stages] == ["scrape", "clean", "store"]
     scrape, clean, store = (s.cmd for s in stages)
     assert scrape == [
         sys.executable, "-m", "src.scrape",
-        "--pages", "5", "--max-details", "150", "--out", "jobs/20261014-143000/raw",
+        "--pages", "5", "--max-details", "150", "--delay", "5.0",
+        "--out", "jobs/20261014-143000/raw",
     ]
     assert clean == [
         sys.executable, "-m", "src.clean",
