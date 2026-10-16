@@ -59,6 +59,7 @@ docs/
   robots_precheck.md  legality pre-flight record (see Compliance)
   deploy_github.md  how to wire GitHub Actions + Neon secrets
   websiteplan.md   Vercel build plan for the portfolio website (not the pipeline)
+  roadmap.md       what comes next, in three tiers (credibility → differentiation → retention)
 src/scrape … src/clean … src/store    the three pipeline stages (CLI: python -m src.<stage>)
 sql/schema.sql     idempotent DDL (Neon/Postgres)
 dashboard/         views.sql, dax_measures.dax, build_guide.md
