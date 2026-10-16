@@ -43,13 +43,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             </div>
             <div>
               <h3 className="font-semibold text-zinc-100">Compliance</h3>
-              <p>Zillow robots-allowed paths only, ≥2s pacing, CAPTCHA = abort. Realtor.com excluded (scraping disallowed). Demo sample — full details on Zillow. Production would use a licensed MLS feed.</p>
+              <p>Zillow robots-allowed paths only, 5s pacing (2s contractual floor), CAPTCHA = hard stop. Realtor.com excluded (scraping disallowed). A sample of NYC actives, not full-market coverage — production would use a licensed MLS feed.</p>
             </div>
             <div>
               <h3 className="font-semibold text-zinc-100">Links &amp; roadmap</h3>
               <p>
-                <a className="underline" href="https://github.com">GitHub repo ↗</a> ·{" "}
-                <a className="underline" href="/data">Power BI analyst deep-dive</a>
+                <a className="underline" href="https://github.com/Frappppy/off-market-radar-nyc">GitHub repo ↗</a> ·{" "}
+                <a className="underline" href="/data">Call list + CSV export</a>
               </p>
               <p className="mt-1">V2 roadmap: login + saved searches + email alerts. Shortlist V1 lives in your browser only.</p>
             </div>
