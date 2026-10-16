@@ -86,6 +86,7 @@ CREATE TABLE listings (
   url               text,
   first_seen_at     timestamptz NOT NULL DEFAULT now(),
   last_seen_at      timestamptz NOT NULL DEFAULT now(),
+  is_active         boolean NOT NULL DEFAULT true,   -- false = missed STALE_RUNS consecutive successful runs
   PRIMARY KEY (source, listing_id)
 );
 
@@ -122,10 +123,14 @@ CREATE TABLE pipeline_runs (
 
 **Upsert semantics (idempotent daily append):**
 - `listings`: `ON CONFLICT (source, listing_id) DO UPDATE` → refresh mutable
-  fields + `last_seen_at = now()`.
+  fields + `last_seen_at = now()` + `is_active = true`. A listing that reappears
+  after being marked stale is thereby reactivated ("back on market").
 - `listing_snapshots`: `ON CONFLICT (source, listing_id, snapshot_date) DO UPDATE`
   (a same-day re-run corrects rows, never duplicates).
 - Exactly one `pipeline_runs` row per run, updated to `success`/`failed`.
+- After a successful load, listings that have missed `STALE_RUNS` (3) consecutive
+  successful runs are marked `is_active = false` (`mark_stale_listings`, run
+  inside the same transaction that flips `pipeline_runs` to `success`).
 
 Dashboard views live separately in `dashboard/views.sql` (owned by the Power BI
 stage, applied after `sql/schema.sql`):
@@ -134,6 +139,9 @@ stage, applied after `sql/schema.sql`):
 -- vw_latest_listings: latest snapshot per listing + lat/lng/zip/property_type
 --   (drives the map: address, city, zip, latitude, longitude, price,
 --    days_on_market, price_drop_pct, motivation_score, snapshot_date)
+--   + is_active and last_seen_at for freshness filtering / "last seen" display
+-- vw_listing_history: one row per (source, listing_id, snapshot_date) straight
+--   from listing_snapshots — the full per-listing price history
 -- vw_zip_price_drop_30d: avg(price_drop_pct) per zip per snapshot_date,
 --   last 30 days (drives the trend line)
 ```

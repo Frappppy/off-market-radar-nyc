@@ -1,6 +1,7 @@
 # Roadmap — Off-Market Radar NYC
 
-Status: **proposed**, not yet started. Recorded 2026-10-16.
+Status: **Tier 1 built, gated, not yet deployed** — see "Build status — Tier 1"
+below. Recorded 2026-10-16.
 Owner: website / product stage. Supersedes nothing — `docs/websiteplan.md` remains
 the V1 build plan; this file covers what comes next.
 
@@ -90,6 +91,14 @@ component.
 view is unshareable. A client cannot send "the 12 Highs in 11215 over 120 days"
 to a colleague or to their phone.
 
+> **Correction (2026-10-16, during the Tier 1 build).** The premise above is
+> wrong: `useFilters` has been URL-backed since V1 — it hydrates every filter
+> from `useSearchParams` and writes back with `router.replace`, and `/map`,
+> `/trends` and `/data` all share it. The core of 1.3 was therefore already
+> done. Three real defects were found by audit and fixed instead; see "Build
+> status — Tier 1". The paragraph is kept because the *intent* below (one
+> shareable view) is still the goal.
+
 **Fix.** Serialise filter state into the URL query string and hydrate from it.
 The map, trends and data pages already share `useFilters`, so this lands once.
 
@@ -109,6 +118,72 @@ Effort: **small**. Data already exists in `pipeline_runs` and the deployment is
 already gated on it.
 
 ---
+
+## Build status — Tier 1 (2026-10-16)
+
+Built on branch `main` (uncommitted at time of writing). Deployment is a separate
+step: **the SQL migration has not been applied to production and the site has not
+been redeployed** — see `docs/apply_tier1_migration.md`, which carries the apply
+order and the two hazards that make the order matter.
+
+**1.1 — stale listings + freshness.** The bug fix is a recency guard in
+`site/lib/db.ts` that keeps only the newest snapshot cohort. Measured on
+production: **1,019 → 1,011 rows**, the 8-row difference being the listings whose
+newest snapshot is not the newest cohort. Scope, stated honestly: those 8 are all
+`Low`, so the *default* map filter was never showing them; the inflation was in
+the unfiltered surface, the totals and the CSV. The proper fix also landed —
+`listings.is_active` (+ `last_seen_at` through `vw_latest_listings`), set true by
+the loader's upsert and flipped false after `STALE_RUNS = 3` consecutive missed
+successful runs. The guard is deliberately a no-op while fewer than 3 successful
+runs exist, because with too little history there is no honest way to separate
+"gone" from "not scraped this time".
+
+*Open decision:* the guard defaults to `window_days = 0` (exact newest cohort).
+That is what removes the stale rows, but it also means every row's date *is* the
+newest, so the per-listing "last seen N days ago" label reads "today" for the
+whole cohort and only becomes informative if the window is loosened. `window_days`
+is a live query param, so this is a one-constant change rather than a redeploy.
+
+**1.2 — price-history panel.** Clicking a pin, a table row, or a keyboard-focused
+row opens a panel with a price sparkline, every recorded reduction with its date,
+DOM, $/sqft, the motivation reason, last-seen, and the outbound link. Backed by
+the new `vw_listing_history` view and `GET /api/listing/[id]`. No new data
+collection. Requires the view *and* its `GRANT` in production; until then the
+endpoint degrades to `{history: [], unavailable: true}` and the panel says so
+rather than erroring the map.
+
+**1.3 — shareable links.** Already implemented in V1 (see the correction above).
+Three genuine defects were fixed instead: (a) an empty motivation selection
+silently snapped back to the defaults on reload/share, (b) `?min_dom=abc` parsed
+to `0`, silently *widening* the filter, and (c) `/data`'s sort key, direction and
+page never reached the URL, so a shared view did not reproduce sort or paging.
+The empty-selection semantic is now explicit and identical on client and server:
+absent `score` → defaults; present-but-empty → all scores. A "Copy link" control
+was added.
+
+**1.4 — ingestion health card.** `GET /api/health` + a card on `/trends` and
+`/data` showing last successful run, next scheduled run (`0 10 * * *` UTC),
+coverage against `MARKET_REFERENCE` (stated as a sample), 30-day success/failure
+tallies, and history depth. It exists to answer "why is there a hole in the
+chart?" before the client asks. No new SQL: it reads `pipeline_runs` and
+`vw_latest_listings`, both already granted.
+
+**Verification.** Independent backend/data gate: recency-guard arithmetic
+reproduced against live read-only Neon, the four SQL files parsed and confirmed
+re-runnable, `vw_listing_history` cross-checked column-by-column against the
+query that reads it, CSV export diffed against `HEAD` (unchanged), and the
+stale-marking predicate falsified — it originally deactivated the whole table on
+an empty run history, which is fixed. `pytest` 142 passed,
+`dashboard/verify_contract.py` 54/54.
+
+**Known gaps.** `/api/listing` returns a single `unavailable` shape for every
+error while the panel asserts a specific cause, so a connection timeout would
+render a false explanation. The frozen-CSV fallback echoes `window_days` without
+applying it (harmless today: the sample holds one snapshot date). Both are
+recorded here rather than silently shipped.
+
+---
+
 
 ## Tier 2 — Differentiation
 
@@ -194,8 +269,9 @@ Recorded so they are not mistaken for oversights:
 
 ## Recommended order
 
-1. **Tier 1** — three quarters of it is small, and 1.1 is closer to a bug than a
-   feature. It also protects everything shown after it.
+1. ~~**Tier 1**~~ — **built 2026-10-16** (see "Build status — Tier 1"; SQL not yet
+   applied to production, site not yet redeployed). Three quarters of it was
+   small, and 1.1 turned out to be closer to a bug than a feature.
 2. **Tier 2.1 change feed** — the headline feature; makes the daily pipeline the
    visible product.
 3. **Tier 2.2**, then **Tier 3** as retention becomes the constraint.

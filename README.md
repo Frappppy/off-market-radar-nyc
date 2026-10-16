@@ -143,6 +143,21 @@ city-agnostic (zip/lat-long drive the map).
 | 3. Store | ✅ live-PG unshimmed fix — `with conn.transaction()` per transaction, 31/31 live checks (`jobs/pg-fix-20261015-122253`) |
 | 4. Dashboard | ✅ sqlglot parse + DDL cross-check + DAX↔guide consistency (49 checks via `dashboard/verify_contract.py`) |
 
+### Website — Tier 1 of the roadmap: built, **not yet deployed**
+
+The credibility tier (`docs/roadmap.md`) is implemented on `main`: stale listings
+dropped from the data surface (1,019 → 1,011 rows, measured on production), a
+per-listing price-history panel, shareable-filter fixes, and an ingestion health
+card. Nothing is live yet — the SQL migration and the `vw_listing_history` grant
+are a deliberate owner action, and the site has not been redeployed.
+
+- Apply order + the two hazards that make it matter: `docs/apply_tier1_migration.md`
+- What was built, decided and left open: `docs/roadmap.md` § "Build status — Tier 1"
+- Prove the migration against a real local PostgreSQL before touching production:
+  `scripts/tier1_migration_check.ps1` (apply order, idempotency, the upgrade guard,
+  the grant hazard, the cold-start gate, the history view vs the shipped query)
+- Test count is now **142** (`pytest tests/ -q`); `dashboard/verify_contract.py` 54/54.
+
 ### Live data reality — what the website actually shows
 
 The Vercel site reads Neon and the freshness strip reports `live: true`. "Live"

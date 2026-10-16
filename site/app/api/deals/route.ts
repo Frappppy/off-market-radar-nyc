@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { applyFilters, type Deal, type FilterState } from "@/lib/types";
+import { applyFilters, type Deal, type DealsResponse, type FilterState } from "@/lib/types";
 import { buildDealsQuery, getSql } from "@/lib/db";
 import { loadFallbackDeals } from "@/lib/fallback";
 
@@ -14,13 +14,23 @@ function parse(req: Request) {
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean);
+  const windowRaw = numOrNull(u.searchParams.get("window_days"));
   return {
     scores,
-    minDom: minDomRaw == null || minDomRaw === "" ? null : Number(minDomRaw),
+    // numOrNull, NOT bare Number(): `min_dom=abc` used to yield NaN, which
+    // buildDealsQuery pushed into SQL (`days_on_market >= 'NaN'`) -> integer
+    // cast error -> the catch below silently served the FROZEN SAMPLE for a
+    // mere typo. Absent/empty -> null (no floor), unparseable -> null, so a
+    // mistyped link can only ever widen, never swap the dataset. min_price and
+    // window_days already went through this guard; min_dom was the odd one out.
+    minDom: numOrNull(minDomRaw),
     zips,
     minPrice: numOrNull(u.searchParams.get("min_price")),
     maxPrice: numOrNull(u.searchParams.get("max_price")),
     type: u.searchParams.get("type"),
+    // Recency guard (roadmap 1.1): 0 = newest snapshot only. buildDealsQuery
+    // clamps again, so anything negative/absurd degrades to the safe default.
+    windowDays: windowRaw == null ? 0 : Math.max(0, Math.floor(windowRaw)),
     limit: Math.min(Number(u.searchParams.get("limit") ?? 500) || 500, 5000),
     offset: Number(u.searchParams.get("offset") ?? 0) || 0,
   };
@@ -29,6 +39,17 @@ function numOrNull(v: string | null): number | null {
   if (v == null || v === "") return null;
   const n = Number(v);
   return Number.isFinite(n) ? n : null;
+}
+
+// Newest snapshot_date across the returned rows — no extra query needed, and
+// it is the same value the recency guard anchored on. YYYY-MM-DD sorts
+// lexicographically, so a string max is exact.
+function maxSnapshotDate(deals: Deal[]): string | null {
+  let max = "";
+  for (const d of deals) {
+    if (d.snapshot_date && d.snapshot_date > max) max = d.snapshot_date;
+  }
+  return max || null;
 }
 
 // CSV export uses the same query path (?format=csv, up to 5k rows) so the
@@ -49,6 +70,7 @@ export async function GET(req: Request) {
       minPrice: q.minPrice,
       maxPrice: q.maxPrice,
       type: q.type,
+      windowDays: q.windowDays,
       limit: wantCsv ? 5000 : q.limit,
       offset: wantCsv ? 0 : q.offset,
     });
@@ -64,7 +86,14 @@ export async function GET(req: Request) {
       type: q.type,
       zips: q.zips,
     };
-    const filtered = applyFilters(all, f);
+    // The frozen sample is a single pre-guard snapshot per listing. The live
+    // path anchors on max(snapshot_date); apply the same rule to the sample,
+    // otherwise window_days=0 would return whatever the sample happens to hold
+    // (rows from an older date included) while the response still reports 0 —
+    // the same silent-stale-cohort bug the recency guard exists to prevent.
+    const newest = all.reduce((m, d) => (d.snapshot_date && d.snapshot_date > m ? d.snapshot_date : m), "");
+    const cohort = q.windowDays <= 0 && newest ? all.filter((d) => d.snapshot_date === newest) : all;
+    const filtered = applyFilters(cohort, f);
     deals = wantCsv ? filtered.slice(0, 5000) : filtered.slice(q.offset, q.offset + q.limit);
   }
 
@@ -90,5 +119,12 @@ export async function GET(req: Request) {
       },
     });
   }
-  return NextResponse.json({ deals, live, count: deals.length });
+  const body: DealsResponse = {
+    deals,
+    live,
+    count: deals.length,
+    window_days: q.windowDays,
+    latest_snapshot_date: maxSnapshotDate(deals),
+  };
+  return NextResponse.json(body);
 }

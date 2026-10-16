@@ -1,0 +1,80 @@
+tier1_migration_check  run_id=tier1-migration-check  2026-10-16 16:50:58
+
+== A. apply order - views.sql before the migration must fail ==
+  PASS  A0 git HEAD:sql/schema.sql is the pre-Tier-1 shape (no is_active)
+  PASS  A1 the pre-Tier-1 schema applies
+  PASS  A2 baseline: no is_active column
+  PASS  A3 views.sql BEFORE the migration fails (so the runbook order is required)
+  PASS  A4 ...and the error names is_active (undefined column)
+  PASS  A5 the failed apply left no views behind (rolled back)
+  PASS  A6 the migration applies
+  PASS  A7 views.sql after the migration applies
+  PASS  A8 all three views exist
+
+== B. idempotency - every file re-applies cleanly and changes no schema ==
+  PASS  B1 migration + views + schema each re-apply cleanly
+  PASS  B2 the view set is unchanged after re-apply
+  PASS  B3 every view keeps its exact column list and order
+  PASS  B4 listings keeps its exact column list and order
+  PASS  B5 re-apply created no rows
+  PASS  B6 the new columns are appended LAST (Power BI / dashboard column order preserved)
+
+== C. upgrade guard - a pre-Tier-1 database rejects the loader's upsert until repaired ==
+  PASS  C1 the pre-Tier-1 schema applies
+  PASS  C2 baseline: no is_active column
+  PASS  C3 the loader's REAL upsert FAILS on the pre-Tier-1 database
+  PASS  C4 ...and the failure names is_active (the exact production break)
+  PASS  C5 sql/schema.sql applies on the pre-Tier-1 database
+  PASS  C6 ...and the upgrade guard repaired the column
+  PASS  C7 the SAME upsert now succeeds
+  PASS  C8 ...and writes exactly one row
+  PASS  C9 the written row is active
+  PASS  C10 a re-upsert takes the ON CONFLICT DO UPDATE branch
+  PASS  C11 ...and still sets is_active = true
+
+== D. grant hazard H1 - re-applying views.sql destroys the reader's SELECT ==
+  PASS  D1 sql/vercel_readonly_role.sql grants all four objects the site reads
+  PASS  D2 reader can SELECT vw_latest_listings
+  PASS  D2 reader can SELECT vw_zip_price_drop_30d
+  PASS  D2 reader can SELECT vw_listing_history
+  PASS  D2 reader can SELECT pipeline_runs
+  PASS  D3 reader cannot SELECT listings (least privilege kept)
+  PASS  D3 reader cannot SELECT listing_snapshots (least privilege kept)
+  PASS  D4 views.sql re-applies
+  PASS  D5 H1 REPRODUCED: the reader LOST SELECT on vw_latest_listings after the re-apply
+  PASS  D5 H1 REPRODUCED: the reader LOST SELECT on vw_zip_price_drop_30d after the re-apply
+  PASS  D6 the recreated vw_listing_history is unreadable too until granted
+  PASS  D7 pipeline_runs keeps its grant (it is not dropped - only the views are)
+  PASS  D8 the runbook's four-object re-grant restores every read
+
+== E. cold-start gate - the real mark_stale_listings() below STALE_RUNS successful runs ==
+  PASS  E0 schema applies
+  PASS  E1 0 successful runs: a true no-op, no listing is deactivated
+  PASS  E2 1 successful run (< STALE_RUNS): a true no-op, no listing is deactivated
+  PASS  E3 2 successful runs (< STALE_RUNS): a true no-op, no listing is deactivated
+  PASS  E4 3 successful runs: exactly the two listings that missed all three are deactivated
+  PASS  E5 ...and they are the right ones (L_recent missed 2, so it stays)
+  PASS  E6 re-running is idempotent
+  PASS  E7 an older 4th run does not change the outcome (window = the newest N)
+  PASS  E8 a listing that reappears is reactivated by the upsert
+
+== F. 1.2 - the shipped LISTING_HISTORY_QUERY against the real view ==
+  PASS  F0 views apply
+  PASS  F1 vw_listing_history exposes exactly the contract column set
+  PASS  F2 LISTING_HISTORY_QUERY found in site/lib/db.ts
+  PASS  F3 the shipped query returns the full 3-row history
+  PASS  F4 its result columns match the SELECT list / lib/types.ts exactly
+  PASS  F5 history comes back oldest-first (the sparkline needs no re-sort)
+  PASS  F6 both recorded reductions survive the view
+  PASS  F7 every reduction has price < previous_price
+
+== G. 1.1 - the recency guard on two snapshot dates ==
+  PASS  G1 the guard excludes at least one stale row (cohort < whole view)
+  PASS  G2 the excluded rows are exactly those whose NEWEST snapshot is older
+  PASS  G3 window_days >= 1 keeps the stale row (the dial loosens the guard)
+  PASS  G4 after a MISSED run the guard still returns the newest available cohort, never an empty map
+
+== SUMMARY ==
+passed: 60   failed: 0   total: 60
+RESULT: ALL CHECKS PASSED
+driver exit=0  passed=60  failed=0

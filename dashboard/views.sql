@@ -18,6 +18,7 @@ BEGIN;
 
 DROP VIEW IF EXISTS vw_zip_price_drop_30d CASCADE;
 DROP VIEW IF EXISTS vw_latest_listings CASCADE;
+DROP VIEW IF EXISTS vw_listing_history CASCADE;
 
 -- -----------------------------------------------------------------------------
 -- vw_latest_listings -- one row per (source, listing_id): the listing's MOST
@@ -43,7 +44,13 @@ SELECT
     s.motivation_score,
     s.motivation_reason,
     s.snapshot_date,
-    l.url
+    l.url,
+    -- Tier 1.1: freshness is now first-class. is_active = false means the
+    -- listing missed N consecutive successful runs (sold / delisted); the site
+    -- filters on it. last_seen_at drives the "last seen N days ago" display.
+    -- Appended after the existing columns so Power BI column order is preserved.
+    l.is_active,
+    l.last_seen_at
 FROM listings AS l
 INNER JOIN (
     SELECT DISTINCT ON (source, listing_id)
@@ -61,6 +68,32 @@ INNER JOIN (
 ) AS s
   ON s.source = l.source
  AND s.listing_id = l.listing_id;
+
+-- -----------------------------------------------------------------------------
+-- vw_listing_history -- one row per (source, listing_id, snapshot_date): the
+-- FULL daily snapshot history, with none of the "latest only" reduction applied
+-- by vw_latest_listings. UNIQUE (source, listing_id, snapshot_date) on the base
+-- table guarantees exactly one row per tuple. Feeds the per-listing
+-- price-history panel / endpoint (Tier 1.2): a seller who cut $50k, then $25k,
+-- then held over 60 days is only visible across rows. Base numeric types are
+-- kept (price_per_sqft numeric(10,2), price_drop_pct numeric(6,2)) — the API
+-- layer casts, consistent with the other views in this file.
+-- -----------------------------------------------------------------------------
+CREATE OR REPLACE VIEW vw_listing_history AS
+SELECT
+    source,
+    listing_id,
+    snapshot_date,
+    price,
+    previous_price,
+    price_reduced,
+    days_on_market,
+    price_per_sqft,
+    price_drop_pct,
+    motivation_score,
+    motivation_reason,
+    scraped_at
+FROM listing_snapshots;
 
 -- -----------------------------------------------------------------------------
 -- vw_zip_price_drop_30d -- avg(price_drop_pct) + row count per zip per

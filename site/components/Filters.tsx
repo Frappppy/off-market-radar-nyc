@@ -1,4 +1,5 @@
 "use client";
+import ShareLink from "./ShareLink";
 import type { FilterState, MotivationScore } from "@/lib/types";
 
 const SCORES: MotivationScore[] = ["High", "Medium", "Low"];
@@ -27,8 +28,11 @@ export default function Filters({
         <span className="font-semibold">Filters</span>
         <button className="text-xs underline" onClick={onReset}>Reset</button>
       </div>
-      <div className="text-xs text-zinc-400">
-        {total != null ? `${shown ?? "…"} of ${total} shown` : `${shown ?? "…"} shown`}
+      <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-zinc-400">
+        <span>{total != null ? `${shown ?? "…"} of ${total} shown` : `${shown ?? "…"} shown`}</span>
+        {/* The filter panel is where a view is composed, so it is where the
+            shareable link belongs (roadmap 1.3). */}
+        <ShareLink />
       </div>
       <div>
         <label className="font-medium text-zinc-100">Source</label>
@@ -60,6 +64,13 @@ export default function Filters({
             </label>
           ))}
         </div>
+        {/* Unticking every box is a deliberate "no score filter", not a broken
+            panel: say so, because the table keeps returning rows. */}
+        {value.score.length === 0 && (
+          <p className="mt-1 text-xs text-zinc-500">
+            No score selected — showing <span className="text-zinc-300">all</span> scores.
+          </p>
+        )}
       </div>
       <div>
         <label className="font-medium text-zinc-100">DOM ≥ {value.minDom} days</label>

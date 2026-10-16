@@ -1,4 +1,5 @@
-"""Postgres access: connection, idempotent upserts, pipeline_runs bookkeeping.
+"""Postgres access: connection, idempotent upserts, pipeline_runs bookkeeping,
+and stale-listing (is_active) marking.
 
 All queries are parameterized (psycopg3 %s placeholders) — no string-built SQL.
 Secrets: DATABASE_URL only ever read from env / gitignored config file; it is
@@ -36,6 +37,7 @@ ON CONFLICT (source, listing_id) DO UPDATE SET
   bathrooms        = EXCLUDED.bathrooms,
   living_area_sqft = EXCLUDED.living_area_sqft,
   url              = EXCLUDED.url,
+  is_active        = true,
   last_seen_at     = now()
 """
 
@@ -71,6 +73,41 @@ UPDATE pipeline_runs
 SET finished_at = now(), status = %s, records_scraped = %s,
     records_loaded = %s, notes = %s
 WHERE run_id = %s
+"""
+
+# A listing is deactivated after missing this many consecutive successful runs
+# (it has not appeared in the feed for that many runs: sold / delisted / pulled).
+STALE_RUNS = 3
+
+# Cut-off = the started_at of the N-th most recent successful run. A listing
+# whose last_seen_at predates that has missed N complete successful loads.
+#
+# The `count(*) >= N` gate is load-bearing, not decorative: it makes the whole
+# statement a NO-OP until N successful runs exist. Without it, a freshly-seeded
+# database (fewer than N runs) collapses the cut-off onto the most recent run —
+# so a listing merely absent from today's feed, or one skipped because that run
+# was partial, would be deactivated after a SINGLE miss instead of N. With too
+# little history there is no honest way to tell "gone" from "not scraped this
+# time", so the conservative choice is to do nothing.
+#
+# With the gate passed the subquery always yields N rows, so MIN() cannot be
+# NULL; and if it ever were, `last_seen_at < NULL` is NULL and updates nothing,
+# so the NULL path is safe regardless of evaluation order.
+# The `l.is_active` guard keeps the UPDATE idempotent and cheap on re-runs.
+_MARK_STALE = """
+UPDATE listings l
+SET is_active = false
+WHERE l.is_active
+  AND (SELECT count(*) FROM pipeline_runs WHERE status = 'success') >= %s
+  AND l.last_seen_at < (
+        SELECT MIN(r.started_at)
+          FROM (SELECT started_at
+                  FROM pipeline_runs
+                 WHERE status = 'success'
+                   AND started_at IS NOT NULL
+                 ORDER BY started_at DESC
+                 LIMIT %s) AS r
+      )
 """
 
 _DSN_RE = re.compile(r"(\w+://[^:/\s]+):[^@\s]+@")
@@ -148,6 +185,23 @@ def finish_pipeline_run(
         cur.execute(_FINISH_RUN, (status, records_scraped, records_loaded, notes, run_id))
 
 
+def mark_stale_listings(conn: psycopg.Connection, miss_runs: int = STALE_RUNS) -> int:
+    """Flag listings not seen in the last `miss_runs` successful runs.
+
+    Returns the number of listings flipped from active to inactive. Only rows
+    that are still active and whose last_seen_at predates the cut-off change, so
+    the statement is idempotent and returns 0 once everything is settled.
+
+    Returns 0 without touching anything while fewer than `miss_runs` successful
+    runs exist — see the cold-start note on `_MARK_STALE`. Callers must run this
+    AFTER the current run has been marked successful, so that run counts towards
+    the window.
+    """
+    with conn.cursor() as cur:
+        cur.execute(_MARK_STALE, (miss_runs, miss_runs))
+        return cur.rowcount
+
+
 def count_rows(conn: psycopg.Connection, table: str) -> int:
     """Table name is internal-only (tests/verification); values never user input."""
     allowed = {"listings", "listing_snapshots", "pipeline_runs"}
@@ -165,6 +219,7 @@ __all__ = [
     "count_rows",
     "finish_pipeline_run",
     "get_database_url",
+    "mark_stale_listings",
     "redact_dsn",
     "start_pipeline_run",
     "upsert_listings",

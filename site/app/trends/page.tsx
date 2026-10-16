@@ -4,6 +4,8 @@ import {
   Bar, BarChart, CartesianGrid, Cell, Legend, Line, LineChart, Pie, PieChart,
   ResponsiveContainer, Scatter, ScatterChart, Tooltip, XAxis, YAxis, ZAxis,
 } from "recharts";
+import IngestionHealth from "@/components/IngestionHealth";
+import ShareLink from "@/components/ShareLink";
 import { SCORE_COLORS, type Deal, type MotivationScore, type ZipTrend } from "@/lib/types";
 import { useFilters, toDealsQuery } from "@/lib/useFilters";
 
@@ -137,25 +139,27 @@ function TrendsInner() {
 
   return (
     <div className="space-y-4">
-      <div>
-        <p className="eyebrow">Markets · Cross-section</p>
-        <h1 className="mt-1 text-2xl font-bold tracking-tight text-zinc-50">Market trends</h1>
-        <p className="mt-1 text-sm text-zinc-400">
-          Reflects the current map filters.{" "}
-          {snapshotCount <= 1 ? (
-            <>
-              There is <strong className="font-medium text-zinc-300">one snapshot date</strong> so
-              far, so each line below is a single point — a real series appears once the daily
-              job has run across multiple days.
-            </>
-          ) : (
-            <>
-              <strong className="font-medium text-zinc-300">{snapshotCount} daily snapshots</strong>{" "}
-              so far (latest {trends[trends.length - 1]?.snapshot_date ?? "—"}) — the series
-              lengthens with every successful daily run.
-            </>
-          )}
-        </p>
+      <div className="flex flex-wrap items-start gap-3">
+        <div className="min-w-0">
+          <p className="eyebrow">Markets · Cross-section</p>
+          <h1 className="mt-1 text-2xl font-bold tracking-tight text-zinc-50">Market trends</h1>
+          <p className="mt-1 text-sm text-zinc-400">
+            Reflects the current map filters.{" "}
+            {snapshotCount <= 1 ? (
+              <>
+                There is <strong className="font-medium text-zinc-300">one snapshot date</strong> in
+                this view so far, so each line below is a single point — a real series appears once
+                the daily job has run across multiple days.
+              </>
+            ) : (
+              <>
+                <strong className="font-medium text-zinc-300">{snapshotCount} snapshot dates</strong>{" "}
+                in this 30-day window — one point per ZIP per day.
+              </>
+            )}
+          </p>
+        </div>
+        <ShareLink className="ml-auto" />
       </div>
 
       <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-white/10 bg-white/10 md:grid-cols-4">
@@ -168,8 +172,12 @@ function TrendsInner() {
         ))}
       </dl>
 
+      {/* Why a gap exists, answered before the client asks (roadmap 1.4). The
+          depth claim lives here, not repeated in the chart captions below. */}
+      <IngestionHealth />
+
       <div className="grid gap-3 md:grid-cols-2">
-        <ChartCard title="Avg price drop % by ZIP — last 30 days" caption="One point per ZIP per daily load — the series lengthens with each successful run.">
+        <ChartCard title="Avg price drop % by ZIP — last 30 days" caption="One point per ZIP per daily load — a missing day is a missed ingest, detailed in the card above.">
           <ResponsiveContainer>
             <LineChart data={lineData}>
               <CartesianGrid strokeDasharray="3 3" stroke={GRID} />

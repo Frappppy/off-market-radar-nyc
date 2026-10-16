@@ -27,13 +27,36 @@ export interface DealQuery {
   type: string | null;
   limit: number; // map: 500 max; table: 25/page via offset
   offset: number;
+  windowDays?: number; // recency guard; 0 (default) = newest snapshot only
 }
 
 // Builds a parameterized SELECT over vw_latest_listings (dashboard/views.sql).
 // All filters optional; scores validated against the CHECK constraint set.
+//
+// The recency guard (roadmap 1.1) is ALWAYS the first WHERE condition and is
+// deliberately unparameterized: a clamped integer is interpolated instead, so
+// it consumes no bind slot and cannot shift the $n numbering of the optional
+// conditions below it.
+//
+// It anchors on the dataset's own newest snapshot, never CURRENT_DATE. The
+// daily job misses days (free-tier cron, failed runs) and CURRENT_DATE would
+// blank the map on the very first missed run; max(snapshot_date) keeps the map
+// showing the freshest thing we actually have. windowDays <= 0 pins exactly
+// that snapshot; windowDays >= 1 keeps it and the N days before it.
 export function buildDealsQuery(q: DealQuery): { text: string; params: unknown[] } {
   const params: unknown[] = [];
   const conds: string[] = [];
+  const rawWindow = q.windowDays ?? 0;
+  // Number.isFinite gate: a NaN would render as `- NaN` in the SQL text.
+  const windowDays = Number.isFinite(rawWindow)
+    ? Math.min(Math.max(Math.floor(rawWindow), 0), 3650)
+    : 0;
+  const newest = `(SELECT max(snapshot_date) FROM vw_latest_listings)`;
+  conds.push(
+    windowDays <= 0
+      ? `snapshot_date = ${newest}`
+      : `snapshot_date >= ${newest} - ${windowDays}`
+  );
   if (q.scores.length > 0) {
     const allowed = q.scores.filter((s) => ["High", "Medium", "Low"].includes(s));
     if (allowed.length > 0) {
@@ -110,4 +133,63 @@ export const META_SNAPSHOT_QUERY = `
   GROUP BY snapshot_date
   ORDER BY snapshot_date DESC
   LIMIT 1
+`;
+
+// Per-listing price history (roadmap 1.2) — one row per recorded snapshot,
+// oldest first so the panel can draw a sparkline without re-sorting. Reads
+// vw_listing_history (dashboard/views.sql), which a migration must grant before
+// the read-only role can see it; /api/listing/[id] therefore treats ANY error
+// — "permission denied for view" included — as "history unavailable" rather
+// than failing. $1 = source, $2 = listing_id.
+export const LISTING_HISTORY_QUERY = `
+  SELECT source, listing_id, snapshot_date::text AS snapshot_date, price,
+         previous_price, price_reduced, days_on_market,
+         price_per_sqft::float8 AS price_per_sqft,
+         price_drop_pct::float8 AS price_drop_pct,
+         motivation_score, motivation_reason, scraped_at::text AS scraped_at
+  FROM vw_listing_history
+  WHERE source = $1 AND listing_id = $2
+  ORDER BY snapshot_date ASC
+`;
+
+// Ingestion health card (roadmap 1.4) — every aggregate in SQL, one round trip
+// (scalar subqueries inside a single SELECT). History depth is read from
+// vw_latest_listings, which the read-only role is already granted, so no second
+// query is needed.
+//
+// `tracked` is the newest-snapshot cohort, not the whole view: vw_latest_listings
+// keeps one row per listing EVER seen, so count(*) over it includes stale and
+// delisted homes and would overstate coverage. This matches META_SNAPSHOT_QUERY
+// above. `last_success` / `last_failure` come back as JSON objects or null when
+// no such run exists. Status values are the schema's own: running | success |
+// failed.
+export const HEALTH_QUERY = `
+  SELECT
+    (SELECT count(*)::int FROM pipeline_runs
+      WHERE status = 'success'
+        AND finished_at >= now() - interval '30 days') AS runs_ok_30d,
+    (SELECT count(*)::int FROM pipeline_runs
+      WHERE status = 'failed'
+        AND finished_at >= now() - interval '30 days') AS runs_failed_30d,
+    (SELECT json_build_object('run_id', run_id,
+                              'finished_at', finished_at::text,
+                              'records_loaded', records_loaded)
+       FROM pipeline_runs
+      WHERE status = 'success'
+      ORDER BY finished_at DESC NULLS LAST
+      LIMIT 1) AS last_success,
+    (SELECT json_build_object('run_id', run_id,
+                              'finished_at', finished_at::text,
+                              'notes', notes)
+       FROM pipeline_runs
+      WHERE status = 'failed'
+      ORDER BY finished_at DESC NULLS LAST
+      LIMIT 1) AS last_failure,
+    (SELECT count(DISTINCT snapshot_date)::int
+       FROM vw_latest_listings) AS snapshot_days,
+    (SELECT max(snapshot_date)::text
+       FROM vw_latest_listings) AS latest_snapshot_date,
+    (SELECT count(*)::int FROM vw_latest_listings
+      WHERE snapshot_date = (SELECT max(snapshot_date)
+                               FROM vw_latest_listings)) AS tracked
 `;

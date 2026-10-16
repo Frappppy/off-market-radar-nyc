@@ -17,10 +17,12 @@ import psycopg
 
 from . import StoreError
 from .db import (
+    STALE_RUNS,
     apply_schema,
     connect,
     finish_pipeline_run,
     get_database_url,
+    mark_stale_listings,
     redact_dsn,
     start_pipeline_run,
     upsert_listings,
@@ -153,6 +155,7 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     records_loaded = 0
+    inactive_marked = 0
     status = "failed"
     exit_code = EXIT_FAILURE
     conn: psycopg.Connection | None = None
@@ -171,6 +174,7 @@ def main(argv: list[str] | None = None) -> int:
             records_loaded = len(snapshot_rows)
         with conn.transaction():  # transaction 3: mark success
             finish_pipeline_run(conn, run_id, "success", records_scraped, records_loaded, None)
+            inactive_marked = mark_stale_listings(conn)
         status = "success"
         exit_code = EXIT_OK
         append_log(
@@ -180,6 +184,7 @@ def main(argv: list[str] | None = None) -> int:
                 f"- listings upserted (ON CONFLICT source,listing_id): {len(listing_rows)}",
                 f"- listing_snapshots upserted (ON CONFLICT source,listing_id,snapshot_date): {records_loaded}",
                 f"- records_scraped: {records_scraped if records_scraped is not None else 'unknown'}",
+                f"- listings marked inactive (missed {STALE_RUNS} consecutive successful runs): {inactive_marked}",
             ],
         )
     except Exception as exc:  # noqa: BLE001 - converted to a clean stage failure

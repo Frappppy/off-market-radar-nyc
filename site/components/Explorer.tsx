@@ -5,7 +5,7 @@ import DealMap from "./DealMap";
 import Filters from "./Filters";
 import SideCard from "./SideCard";
 import { useFilters, toDealsQuery } from "@/lib/useFilters";
-import { SCORE_COLORS, type Deal, type MotivationScore } from "@/lib/types";
+import { SCORE_COLORS, type Deal, type DealsResponse, type MotivationScore } from "@/lib/types";
 
 const SCORES: MotivationScore[] = ["High", "Medium", "Low"];
 
@@ -15,6 +15,10 @@ function CompactExplorer() {
   const [filters, setFilters, resetFilters] = useFilters();
   const [deals, setDeals] = useState<Deal[]>([]);
   const [total, setTotal] = useState<number | null>(null);
+  const [picked, setPicked] = useState<Deal | null>(null);
+  // Newest snapshot across the returned rows — the reference for "last seen"
+  // (roadmap 1.1). Comes with the deals payload; no extra request.
+  const [latestSnapshot, setLatestSnapshot] = useState<string | null>(null);
 
   const query = useMemo(() => toDealsQuery(filters, { limit: "200" }), [filters]);
 
@@ -22,8 +26,10 @@ function CompactExplorer() {
     let dead = false;
     fetch(`/api/deals?${query}`)
       .then((r) => r.json())
-      .then((j) => {
-        if (!dead) setDeals(j.deals ?? []);
+      .then((j: DealsResponse) => {
+        if (dead) return;
+        setDeals(j.deals ?? []);
+        setLatestSnapshot(j.latest_snapshot_date ?? null);
       })
       .catch(() => {
         if (!dead) setDeals([]);
@@ -79,7 +85,16 @@ function CompactExplorer() {
           Full map →
         </Link>
       </div>
-      <DealMap deals={deals} onPick={() => {}} height={420} />
+      <DealMap deals={deals} onPick={setPicked} height={420} />
+      {/* Compact mode: the panel sits BELOW the 420px preview, never over it —
+          the mini map is the whole point of the overview page. Picking another
+          pin replaces `picked`, so cards never stack. Width matches the /map
+          card (20rem) instead of stretching to the full map width. */}
+      {picked && (
+        <div className="max-w-full sm:max-w-[20rem]">
+          <SideCard deal={picked} onClose={() => setPicked(null)} latestSnapshotDate={latestSnapshot} />
+        </div>
+      )}
     </div>
   );
 }
@@ -89,6 +104,8 @@ function FullExplorer() {
   const [deals, setDeals] = useState<Deal[]>([]);
   const [total, setTotal] = useState<number | null>(null);
   const [picked, setPicked] = useState<Deal | null>(null);
+  // See CompactExplorer: reference date for the panel's "last seen" label.
+  const [latestSnapshot, setLatestSnapshot] = useState<string | null>(null);
 
   const query = useMemo(() => toDealsQuery(filters, { limit: "500" }), [filters]);
 
@@ -96,8 +113,10 @@ function FullExplorer() {
     let dead = false;
     fetch(`/api/deals?${query}`)
       .then((r) => r.json())
-      .then((j) => {
-        if (!dead) setDeals(j.deals ?? []);
+      .then((j: DealsResponse) => {
+        if (dead) return;
+        setDeals(j.deals ?? []);
+        setLatestSnapshot(j.latest_snapshot_date ?? null);
       })
       .catch(() => {
         if (!dead) setDeals([]);
@@ -140,8 +159,15 @@ function FullExplorer() {
             ))}
           </div>
           {picked && (
-            <div className="absolute right-3 top-3 w-80 max-w-[calc(100%-1.5rem)]">
-              <SideCard deal={picked} onClose={() => setPicked(null)} />
+            // z-10: maplibre's control container is z-index 2 and the card can
+            // span the whole map at 390px, so the panel must win the overlap —
+            // the active surface should never be covered by map chrome.
+            <div className="absolute right-3 top-3 z-10 w-80 max-w-[calc(100%-1.5rem)]">
+              <SideCard
+                deal={picked}
+                onClose={() => setPicked(null)}
+                latestSnapshotDate={latestSnapshot}
+              />
             </div>
           )}
         </div>

@@ -31,7 +31,16 @@ export default function DealMap({
       center: [-73.98, 40.72], // NYC
       zoom: 10,
     });
-    map.addControl(new maplibregl.NavigationControl(), "top-right");
+    // top-left, not top-right: the detail panel (roadmap 1.2) floats over the
+    // map's top-right corner, and maplibre gives its control container
+    // `z-index: 2`. At top-right the zoom buttons sat on top of the panel's
+    // Close button and stole the last ~15px of its click target (measured:
+    // elementFromPoint at the button's right edge returned
+    // .maplibregl-ctrl-icon). The panel overlay now also sets z-10, and this
+    // keeps the control out from under the card at desktop widths so both stay
+    // usable. Top-left is empty; the legend is bottom-left and attribution
+    // stays bottom-right.
+    map.addControl(new maplibregl.NavigationControl(), "top-left");
     mapRef.current = map;
 
     const render = () => {

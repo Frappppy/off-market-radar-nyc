@@ -5,8 +5,11 @@
 -- sql/schema.sql and dashboard/views.sql exist.
 --
 -- Least privilege by design — the site only ever queries:
---   vw_latest_listings, vw_zip_price_drop_30d   (dashboard/views.sql)
---   pipeline_runs                               (freshness strip)
+--   vw_latest_listings, vw_zip_price_drop_30d, vw_listing_history
+--                                                (dashboard/views.sql)
+--   pipeline_runs                                (freshness strip)
+-- vw_listing_history is granted for the per-listing price-history panel, which
+-- reads the full daily history through the view.
 -- Postgres evaluates a view with the view owner's privileges, so granting
 -- SELECT on the views is sufficient: no grants on listings / listing_snapshots.
 --
@@ -26,12 +29,14 @@ CREATE ROLE offmarket_reader WITH LOGIN PASSWORD 'REPLACE_WITH_GENERATED_PASSWOR
 GRANT USAGE ON SCHEMA public TO offmarket_reader;
 
 -- 3. The only SELECTs the application performs.
-GRANT SELECT ON vw_latest_listings, vw_zip_price_drop_30d, pipeline_runs
+GRANT SELECT ON vw_latest_listings, vw_zip_price_drop_30d, vw_listing_history,
+  pipeline_runs
   TO offmarket_reader;
 
 -- 4. Verify as offmarket_reader — these must succeed:
 --      SELECT count(*) FROM vw_latest_listings;
 --      SELECT count(*) FROM vw_zip_price_drop_30d;
+--      SELECT count(*) FROM vw_listing_history;
 --      SELECT count(*) FROM pipeline_runs;
 --    ...and these must fail with "permission denied":
 --      SELECT count(*) FROM listings;

@@ -1,0 +1,1 @@
+pg_ctl start exit=0 (output not captured on purpose: the postmaster inherits the pipe; the server log is C:\Users\omisg\AppData\Local\Temp\opencode\pglive\pgdata\pglive.log)

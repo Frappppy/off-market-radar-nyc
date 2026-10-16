@@ -8,6 +8,25 @@ export const metadata: Metadata = {
   title: "Off-Market Radar · NYC — Motivated Seller Finder",
   description:
     "Daily Zillow scrape of NYC listings scored for seller motivation. Map, trends, and CSV export for wholesalers.",
+  // Roadmap 1.3 is "shareable filter links", but a pasted link rendered a bare
+  // URL: the app had no openGraph/twitter metadata anywhere. Text cards only —
+  // there is no og:image asset, so none is claimed. `canonical` is deliberately
+  // absent: it needs a known deployment URL and a wrong canonical is worse than
+  // none (add it behind an env var once the production host is fixed).
+  openGraph: {
+    type: "website",
+    siteName: "Off-Market Radar · NYC",
+    title: "Off-Market Radar · NYC — Motivated Seller Finder",
+    description:
+      "Daily Zillow scrape of NYC listings scored for seller motivation. Map, trends, and CSV export for wholesalers.",
+    locale: "en_US",
+  },
+  twitter: {
+    card: "summary",
+    title: "Off-Market Radar · NYC — Motivated Seller Finder",
+    description:
+      "Daily Zillow scrape of NYC listings scored for seller motivation. Map, trends, and CSV export for wholesalers.",
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

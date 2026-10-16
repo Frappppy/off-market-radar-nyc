@@ -25,6 +25,8 @@ out/
 site/.vercel/
 site/.neon
 site/shots/
+# agent/dev-server scratch output from build + dev verification runs
+site/*.log
 
 # ---- scraped page dumps ---------------------------------------------------
 # Raw HTML / embedded-JSON captures from the source site. Kept on disk as
@@ -42,3 +44,5 @@ jobs/*/cleaned-modified/
 
 # ---- local tool state -----------------------------------------------------
 .webmesh-mcp/
+# browser-tool scratch: screenshots + session state, never evidence we ship
+.playwright-mcp/

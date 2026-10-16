@@ -45,7 +45,7 @@ class FakeConn:
 def instrument(monkeypatch, tmp_path):
     monkeypatch.setenv("DATABASE_URL", "postgresql://u:p@localhost/db")
     monkeypatch.setattr(db, "_DEFAULT_ENV_FILE", tmp_path / "absent.local.env")
-    calls = {"started": [], "finished": [], "listings": 0, "snapshots": 0}
+    calls = {"started": [], "finished": [], "listings": 0, "snapshots": 0, "stale": []}
 
     conn = FakeConn()
     monkeypatch.setattr(cli, "connect", lambda dsn: conn)
@@ -62,6 +62,12 @@ def instrument(monkeypatch, tmp_path):
     )
     monkeypatch.setattr(cli, "upsert_listings", lambda c, rows: len(rows))
     monkeypatch.setattr(cli, "upsert_snapshots", lambda c, rows: len(rows))
+
+    def _fake_mark_stale(c):
+        calls["stale"].append(c)
+        return 4  # deterministic count for the process_log evidence line
+
+    monkeypatch.setattr(cli, "mark_stale_listings", _fake_mark_stale)
     return calls, conn
 
 
@@ -122,9 +128,11 @@ def test_success_flow(instrument, tmp_path):
     log = (out / "process_log.md").read_text(encoding="utf-8")
     assert "status `running` -> `success`" in log
     assert "listing_snapshots upserted" in log
+    assert "listings marked inactive (missed 3 consecutive successful runs): 4" in log
     assert "DATABASE_URL (value never logged)" in log
     assert "postgresql://" not in log
     assert conn.closed
+    assert calls["stale"] == [conn]  # stale-marking runs after the success marker
 
 
 def test_failure_flow_marks_failed(instrument, tmp_path, monkeypatch, capsys):
