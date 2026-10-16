@@ -46,3 +46,11 @@ jobs/*/cleaned-modified/
 .webmesh-mcp/
 # browser-tool scratch: screenshots + session state, never evidence we ship
 .playwright-mcp/
+
+# ---- build artifacts / OS junk (never commit) -------------------------------
+*.tsbuildinfo
+site/tsconfig.tsbuildinfo
+site/next-env.d.ts
+jobs/*/evidence/
+*.log
+.DS_Store
