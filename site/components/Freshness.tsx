@@ -17,11 +17,11 @@ export default function Freshness() {
       Data as of {date}
       {/* detail only where there is room; the hero repeats these numbers */}
       <span className="hidden sm:inline">
-        {" · "}{meta.total_tracked ?? "—"} tracked · {meta.high_count ?? "—"} High · source {meta.source}
+        {" · "}{meta.total_tracked ?? "—"} tracked (sample) · {meta.high_count ?? "—"} High · source {meta.source}
       </span>
       {!meta.live && (
         <span className="ml-1 rounded bg-amber-100 px-1 text-amber-800">
-          demo sample<span className="hidden sm:inline"> — live waking</span>
+          frozen fallback<span className="hidden sm:inline"> — Neon unreachable</span>
         </span>
       )}
     </span>

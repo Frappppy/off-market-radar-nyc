@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Daily pipeline orchestrator — Stage 1 scrape -> Stage 2 clean -> Stage 3 store.
 
-    py -3 scripts/run_daily.py [--skip-scrape] [--pages 30] [--max-details 250] [--delay 5]
+    py -3 scripts/run_daily.py [--skip-scrape] [--pages 30] [--max-details 120] [--delay 5]
 
 - run_id = UTC timestamp YYYYMMDD-HHMMSS; data + run_log.md land in jobs/<run_id>/.
 - config/*.local.env (gitignored) are loaded into the environment first and never
@@ -23,16 +23,20 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 #: Daily-run volume policy — a defensible portfolio-scale sample, NOT bulk.
-#: Zillow NYC reports ~22.8k active listings and one search page yields ~41
-#: cards, so 30 pages is ~1.2k listings (~5% of the market, spread across the
-#: city rather than one borough). The 250 detail fetches enrich the most
-#: promising rows first — the scraper prioritises site-flagged "Price cut"
-#: listings, which is exactly what the motivation score needs.
-#: Pacing is 5s between ALL requests: 2.5x the contractual 2s floor (kept as the
-#: hard floor in src/scrape/cli.py). A full run lands around ~30 min, inside the
-#: workflow's 60-minute timeout. Rationale: docs/robots_precheck.md.
+#: The request budget is deliberately about the SAME as the original
+#: 5-search-page / 150-detail default (~155 requests); it is just spent where it
+#: buys coverage. A search page returns ~41 cards in ONE request, a detail page
+#: returns ONE listing in one request — so pages are ~41x cheaper per listing.
+#: 30 pages is therefore ~1.2k listings (roughly 5% of Zillow's ~22.8k NYC
+#: actives, spread across the city) for the load the old default spent on 82.
+#: The 120 detail fetches enrich the most promising rows first: the scraper
+#: prioritises site-flagged "Price cut" listings, and `price_drop_pct` — which
+#: drives the High score — only exists for enriched rows. Everything else still
+#: carries days-on-market from its search card, which is enough for Medium.
+#: Pacing is 5s between ALL requests: 2.5x the contractual 2s floor (which stays
+#: the hard floor in src/scrape/cli.py). Rationale: docs/robots_precheck.md.
 DAILY_PAGES = 30
-DAILY_MAX_DETAILS = 250
+DAILY_MAX_DETAILS = 120
 DAILY_DELAY = 5.0
 
 

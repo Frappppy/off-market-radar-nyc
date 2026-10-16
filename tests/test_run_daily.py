@@ -22,7 +22,7 @@ def test_utc_run_id_format():
 def test_daily_volume_policy_is_what_the_docs_claim():
     """The daily job's defaults ARE the compliance/volume policy — pin them."""
     args = run_daily.parse_args([])
-    assert (args.pages, args.max_details, args.delay) == (30, 250, 5.0)
+    assert (args.pages, args.max_details, args.delay) == (30, 120, 5.0)
 
 
 def test_build_stages_matches_contract():

@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { coverageNote, MARKET_REFERENCE } from "@/lib/market";
 import type { Deal, Meta } from "@/lib/types";
 
 // Lev/Bluejack-inspired hero: eyebrow + tight headline with the LIVE High
@@ -27,9 +28,11 @@ export default function HeroStats() {
     meta?.total_tracked != null && meta.total_tracked > 0 && high != null
       ? Math.round((high / meta.total_tracked) * 100)
       : null;
+  // How big our slice is, stated before any number is read as market-wide.
+  const scope = coverageNote(meta?.total_tracked);
 
   const stats: Array<[string, string, string]> = [
-    ["Tracked", meta?.total_tracked != null ? String(meta.total_tracked) : "…", `snapshot ${meta?.snapshot_date ?? "—"}`],
+    ["Tracked", meta?.total_tracked != null ? String(meta.total_tracked) : "…", scope ?? `snapshot ${meta?.snapshot_date ?? "—"}`],
     ["High motivation", high != null ? String(high) : "…", pctHigh != null ? `${pctHigh}% of tracked` : "score = High"],
     ["Avg price drop", avgDrop != null ? `${avgDrop.toFixed(1)}%` : "—", "across listings with a cut"],
     ["Avg DOM", avgDom != null ? String(Math.round(avgDom)) : "—", "days on market"],
@@ -38,8 +41,8 @@ export default function HeroStats() {
   return (
     <section className="panel p-6 md:p-8">
       <p className="eyebrow">
-        NYC · Updated daily ·{" "}
-        {meta == null ? "…" : meta.live ? "Live Neon" : "Demo sample"}
+        NYC · sample snapshot ·{" "}
+        {meta == null ? "…" : meta.live ? "live from Neon" : "frozen fallback"}
       </p>
       <h1 className="mt-2 max-w-2xl text-3xl font-bold leading-[1.05] tracking-tight text-zinc-50 md:text-5xl">
         {high != null ? `${high} motivated sellers` : "Motivated sellers"} in NYC this week
@@ -48,6 +51,14 @@ export default function HeroStats() {
         Daily Zillow scan scored for price drops + days-on-market. Drag the DOM
         slider, keep High only — the pins are the call list.
       </p>
+      {scope && (
+        <p className="mt-2 max-w-xl text-xs text-zinc-500">
+          Sample scope: {meta?.total_tracked ?? "…"} scored listings — {scope}{" "}
+          ({MARKET_REFERENCE.as_of}). Ingestion is capped on purpose: robots-allowed
+          paths only, 5s pacing, hard stop on any CAPTCHA challenge. So this is a
+          sample of the market, not full coverage.
+        </p>
+      )}
       <div className="mt-4 flex flex-wrap gap-2">
         <Link href="/map" className="rounded-lg bg-zinc-100 px-4 py-2 text-sm font-semibold text-zinc-950 hover:bg-white">
           Explore the map →

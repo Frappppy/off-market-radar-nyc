@@ -11,7 +11,7 @@ export default function Overview() {
         {[
           ["Staten Island price cuts cluster", "Outer-borough houses show the largest drops — longer DOM, motivated sellers before winter."],
           ["Condos move faster than houses", "Median DOM is lower for condos; High scores concentrate in houses and multi-family."],
-          ["Small sample, real pipeline", "Demo runs on an 82-record frozen sample; live Neon accumulates the daily time-series behind the trend lines."],
+          ["Capped on purpose, not broken", "Ingestion follows robots-allowed paths at 5s pacing and hard-stops on any CAPTCHA challenge. The snapshot is a sample of NYC actives; the daily job grows the history behind the trend lines."],
         ].map(([t, b]) => (
           <article key={t} className="panel p-4">
             <h2 className="font-semibold text-zinc-100">{t}</h2>

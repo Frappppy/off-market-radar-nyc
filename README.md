@@ -120,10 +120,12 @@ city-agnostic (zip/lat-long drive the map).
   hygiene and geo-accuracy (verified US/New York exit), at 5s pacing between
   **all** requests (2.5x the contractual 2s floor kept in `src/scrape/cli.py`),
   capped volume, and full 429/Retry-After compliance — portfolio scale, not bulk.
-- **Daily volume**: 30 search pages + 250 detail pages per run (one search page
-  yields ~41 cards). Zillow NYC reports ~22.8k active listings, so a full run
-  samples roughly 5% of the market — a deliberate, documented ceiling, not a
-  full-market scrape. The numbers live in one place: `DAILY_PAGES`,
+- **Daily volume**: 30 search pages + 120 detail pages per run (~150 requests —
+  the same load as the original 5-page/150-detail default). Because a search page
+  returns ~41 cards in one request while a detail page returns one listing in one
+  request, the budget is spent where it buys coverage: Zillow NYC reports ~22.8k
+  active listings, so a run samples roughly 5% of them — a deliberate, documented
+  ceiling, not a full-market scrape. The numbers live in one place: `DAILY_PAGES`,
   `DAILY_MAX_DETAILS`, `DAILY_DELAY` in `scripts/run_daily.py`, pinned by
   `tests/test_run_daily.py`.
 - **CAPTCHA is a hard stop**: any PerimeterX/CAPTCHA challenge aborts the run

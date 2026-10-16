@@ -139,8 +139,10 @@ function TrendsInner() {
         <p className="eyebrow">Markets · Cross-section</p>
         <h1 className="mt-1 text-2xl font-bold tracking-tight text-zinc-50">Market trends</h1>
         <p className="mt-1 text-sm text-zinc-400">
-          Reflects the current map filters. The demo sample is a single snapshot — daily live
-          loads build the 30-day series behind the trend lines.
+          Reflects the current map filters. There is{" "}
+          <strong className="font-medium text-zinc-300">one snapshot date</strong> so far,
+          so each line below is a single point — a real 30-day series only appears once
+          the daily job has run across multiple days.
         </p>
       </div>
 
@@ -155,7 +157,7 @@ function TrendsInner() {
       </dl>
 
       <div className="grid gap-3 md:grid-cols-2">
-        <ChartCard title="Avg price drop % by ZIP — last 30 days" caption="Single snapshot in demo; each daily load adds one point per ZIP.">
+        <ChartCard title="Avg price drop % by ZIP — last 30 days" caption="One snapshot date so far; each daily load adds one point per ZIP.">
           <ResponsiveContainer>
             <LineChart data={lineData}>
               <CartesianGrid strokeDasharray="3 3" stroke={GRID} />

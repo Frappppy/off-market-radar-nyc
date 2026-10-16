@@ -25,10 +25,13 @@ returned full server-rendered listing content, no CAPTCHA.
   floor is 2s between requests (`MIN_DELAY` in `src/scrape/cli.py`); the daily job
   runs at **5s** (`DAILY_DELAY` in `scripts/run_daily.py`).
 - Portfolio volume — single source of truth is `scripts/run_daily.py`
-  (`DAILY_PAGES` / `DAILY_MAX_DETAILS`): **30 search pages + 250 detail pages**
-  per daily run, i.e. roughly 5% of Zillow's ~22.8k NYC listings. A deliberate
-  ceiling, not a full-market scrape. Override per run with
-  `--pages` / `--max-details` / `--delay`.
+  (`DAILY_PAGES` / `DAILY_MAX_DETAILS`): **30 search pages + 120 detail pages**
+  per daily run (~150 requests, the same load the original 5-page/150-detail
+  default carried). A search page costs one request for ~41 listings; a detail
+  page costs one request for one listing — so pages are spent on coverage
+  (roughly 5% of Zillow's ~22.8k NYC actives) and the detail budget is aimed at
+  the most promising rows. A deliberate ceiling, not a full-market scrape.
+  Override per run with `--pages` / `--max-details` / `--delay`.
 - If a PerimeterX/CAPTCHA challenge appears: STOP the run and report to the user.
   Do not attempt to defeat CAPTCHA.
   - **Observed 2026-10-16:** a challenge (HTTP 403) was served on the *very first*

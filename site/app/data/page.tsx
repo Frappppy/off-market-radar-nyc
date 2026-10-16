@@ -1,6 +1,7 @@
 "use client";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import Filters from "@/components/Filters";
+import { marketSizeLabel, MARKET_REFERENCE } from "@/lib/market";
 import { useFilters, toDealsQuery } from "@/lib/useFilters";
 import { SCORE_COLORS, type Deal } from "@/lib/types";
 
@@ -95,6 +96,10 @@ function DataInner() {
           <h1 className="text-2xl font-bold tracking-tight text-zinc-50">Take the call list with you</h1>
           <p className="mt-1 text-sm text-zinc-400">
             Click any column to sort. The CSV below is exactly these {sorted.length} filtered rows — drop it into your CRM or driving app.
+          </p>
+          <p className="mt-1 text-xs text-zinc-500">
+            Sample data: a capped, robots-respecting Zillow scan. Citywide inventory is {marketSizeLabel}{" "}
+            {MARKET_REFERENCE.label}, so this is a slice of the market rather than full coverage.
           </p>
         </div>
         <a
