@@ -40,3 +40,9 @@ returned full server-rendered listing content, no CAPTCHA.
     stages 2-3 skipped — see `jobs/full-scrape-20261016b/run_log.md`. Two
     consecutive attempts behaved identically. The stop rule fired correctly; no
     retry-until-it-passes logic exists anywhere in the pipeline by design.
+  - **Same day, ~30 minutes later:** the scheduled `daily_pipeline` run, through
+    the *same* proxy pool at the same pacing, completed all ~150 requests and
+    stored **1,011 listings** (`pipeline_runs.run_id = 20261016-055515`). So the
+    block was transient pool reputation, not our request volume (it failed on
+    request #1, before volume could matter) and not a permanent wall. The
+    unconditional stop rule is unchanged and still has no bypass.

@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { coverageNote, MARKET_REFERENCE } from "@/lib/market";
+import { coverageNote, fmtCount, MARKET_REFERENCE } from "@/lib/market";
 import type { Deal, Meta } from "@/lib/types";
 
 // Lev/Bluejack-inspired hero: eyebrow + tight headline with the LIVE High
@@ -32,8 +32,8 @@ export default function HeroStats() {
   const scope = coverageNote(meta?.total_tracked);
 
   const stats: Array<[string, string, string]> = [
-    ["Tracked", meta?.total_tracked != null ? String(meta.total_tracked) : "…", scope ?? `snapshot ${meta?.snapshot_date ?? "—"}`],
-    ["High motivation", high != null ? String(high) : "…", pctHigh != null ? `${pctHigh}% of tracked` : "score = High"],
+    ["Tracked", meta?.total_tracked != null ? fmtCount(meta.total_tracked) : "…", scope ?? `snapshot ${meta?.snapshot_date ?? "—"}`],
+    ["High motivation", high != null ? fmtCount(high) : "…", pctHigh != null ? `${pctHigh}% of tracked` : "score = High"],
     ["Avg price drop", avgDrop != null ? `${avgDrop.toFixed(1)}%` : "—", "across listings with a cut"],
     ["Avg DOM", avgDom != null ? String(Math.round(avgDom)) : "—", "days on market"],
   ];
@@ -52,11 +52,14 @@ export default function HeroStats() {
         slider, keep High only — the pins are the call list.
       </p>
       {scope && (
-        <p className="mt-2 max-w-xl text-xs text-zinc-500">
-          Sample scope: {meta?.total_tracked ?? "…"} scored listings — {scope}{" "}
-          ({MARKET_REFERENCE.as_of}). Ingestion is capped on purpose: robots-allowed
-          paths only, 5s pacing, hard stop on any CAPTCHA challenge. So this is a
-          sample of the market, not full coverage.
+        <p
+          className="mt-2 max-w-xl text-xs text-zinc-500"
+          title={`Citywide count read from Zillow on ${MARKET_REFERENCE.as_of}`}
+        >
+          Sample scope: {meta?.total_tracked != null ? fmtCount(meta.total_tracked) : "…"} scored listings — {scope}.
+          Ingestion is capped on purpose: robots-allowed paths only, 5s pacing,
+          hard stop on any CAPTCHA challenge. So this is a sample of the market,
+          not full coverage.
         </p>
       )}
       <div className="mt-4 flex flex-wrap gap-2">

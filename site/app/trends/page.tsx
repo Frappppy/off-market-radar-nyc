@@ -45,6 +45,9 @@ function TrendsInner() {
       .then((r) => r.json()).then((j) => setDeals(j.deals ?? [])).catch(() => setDeals([]));
   }, [filters]);
 
+  // How many daily snapshots exist — drives the honest caption below.
+  const snapshotCount = useMemo(() => new Set(trends.map((t) => t.snapshot_date)).size, [trends]);
+
   const kpis = useMemo(() => {
     const prices = deals.map((d) => d.price).filter((v): v is number => v != null);
     const doms = deals.map((d) => d.days_on_market).filter((v): v is number => v != null);
@@ -57,8 +60,7 @@ function TrendsInner() {
     ] as Array<[string, string, string]>;
   }, [deals]);
 
-  const { lineData, topZips } = useMemo(() => {
-    const counts = new Map<string, number>();
+  const { lineData, topZips } = useMemo(() => {    const counts = new Map<string, number>();
     for (const t of trends) counts.set(t.zip, (counts.get(t.zip) ?? 0) + t.listing_count);
     const top = [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6).map(([z]) => z);
     const byDate = new Map<string, Record<string, unknown>>();
@@ -139,10 +141,20 @@ function TrendsInner() {
         <p className="eyebrow">Markets · Cross-section</p>
         <h1 className="mt-1 text-2xl font-bold tracking-tight text-zinc-50">Market trends</h1>
         <p className="mt-1 text-sm text-zinc-400">
-          Reflects the current map filters. There is{" "}
-          <strong className="font-medium text-zinc-300">one snapshot date</strong> so far,
-          so each line below is a single point — a real 30-day series only appears once
-          the daily job has run across multiple days.
+          Reflects the current map filters.{" "}
+          {snapshotCount <= 1 ? (
+            <>
+              There is <strong className="font-medium text-zinc-300">one snapshot date</strong> so
+              far, so each line below is a single point — a real series appears once the daily
+              job has run across multiple days.
+            </>
+          ) : (
+            <>
+              <strong className="font-medium text-zinc-300">{snapshotCount} daily snapshots</strong>{" "}
+              so far (latest {trends[trends.length - 1]?.snapshot_date ?? "—"}) — the series
+              lengthens with every successful daily run.
+            </>
+          )}
         </p>
       </div>
 
@@ -157,7 +169,7 @@ function TrendsInner() {
       </dl>
 
       <div className="grid gap-3 md:grid-cols-2">
-        <ChartCard title="Avg price drop % by ZIP — last 30 days" caption="One snapshot date so far; each daily load adds one point per ZIP.">
+        <ChartCard title="Avg price drop % by ZIP — last 30 days" caption="One point per ZIP per daily load — the series lengthens with each successful run.">
           <ResponsiveContainer>
             <LineChart data={lineData}>
               <CartesianGrid strokeDasharray="3 3" stroke={GRID} />

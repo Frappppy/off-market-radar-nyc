@@ -137,34 +137,60 @@ city-agnostic (zip/lat-long drive the map).
 
 | Stage | Status |
 |---|---|
-| 1. Scrape | ✅ live-proxy smoke success — 82 records (`jobs/smoke-scrape-20261015-084632`, status=success) |
+| 1. Scrape | ✅ live-proxy runs — **1,011 records** (30 pages, 120/120 details) via CI run `20261016-055515`; earlier 82-record smoke run `jobs/smoke-scrape-20261015-084632` |
 | 2. Clean | ✅ full pytest suite green; end-to-end on fixture verified |
 | 3. Store | ✅ live-PG unshimmed fix — `with conn.transaction()` per transaction, 31/31 live checks (`jobs/pg-fix-20261015-122253`) |
 | 4. Dashboard | ✅ sqlglot parse + DDL cross-check + DAX↔guide consistency (49 checks via `dashboard/verify_contract.py`) |
 
 ### Live data reality — what the website actually shows
 
-The Vercel site does read Neon, and the freshness strip reports `live: true`. But
-"live" describes the **plumbing**, not the **coverage**. As of 2026-10-16 the
-database holds a single documented run: **82 listings from a 2-search-page smoke
-scrape** (`jobs/smoke-scrape-20261015-084632`) — about **0.4%** of the ~22.8k
-active NYC listings Zillow reports, on **one** snapshot date.
+The Vercel site reads Neon and the freshness strip reports `live: true`. "Live"
+describes the **plumbing**; this section describes the **coverage**, because the
+two are not the same thing.
 
-Consequences worth knowing before you demo it:
+As of 2026-10-16 the database holds **two** successful runs (see `pipeline_runs`):
 
-- The frozen CSV fallback (`site/public/data/listings_sample.csv`) is
-  byte-identical to that smoke run's cleaned output, so "live Neon" and "demo
-  sample" currently render the same 82 rows. The fallback is a resilience
-  feature, not a second dataset.
-- One snapshot date means **no real time-series yet** — the Trends page is a
-  single point per ZIP until the daily cron accumulates history.
-- **71 of 82 rows carry no price drop** (`price_drop_pct` is null), so the
-  "motivated seller" signal is thin in this sample.
+| run_id | records | how it got there |
+|---|---|---|
+| `neon-prod-load-20261016` | 82 | manual load of the 2-page smoke scrape |
+| `20261016-055515` | 1,011 | scheduled `daily_pipeline` (30 pages / 120 details) |
 
-The volume ceiling that addresses this is configured (`DAILY_PAGES` /
-`DAILY_MAX_DETAILS` in `scripts/run_daily.py`) but has not yet been exercised: a
-run attempted on 2026-10-16 was challenged (HTTP 403) on its *first* request and
-aborted, per the compliance rule above.
+Current dataset, read through the read-only role's granted views:
+
+- **1,019 rows** in `vw_latest_listings`; the latest snapshot (2026-10-16) holds
+  **1,011 listings** — roughly **4.4%** of the ~22.8k active NYC listings Zillow
+  reports. A sample at portfolio scale, capped on purpose.
+- **2 snapshot dates** (2026-10-15, 2026-10-16), so the Trends page has a genuine
+  second point for ZIPs present in both — and gains one point per daily run.
+- **157 distinct ZIPs**, **211 (zip, date) rows** in `vw_zip_price_drop_30d` —
+  spread across all five boroughs rather than one.
+- Score mix: **43 High / 114 Medium / 862 Low**.
+- **138 rows carry a price cut**; 892 carry $/sqft and 1,012 carry coordinates.
+  `price_drop_pct` only exists for detail-enriched rows, and the 120-per-run
+  detail budget is aimed at site-flagged "Price cut" listings first.
+
+Known limits, stated plainly:
+
+- The frozen CSV fallback (`site/public/data/listings_sample.csv`) is still the
+  82-row smoke sample, byte-identical to `jobs/smoke-scrape-20261015-084632`. It
+  renders only when Neon is unreachable, and it is **not** the live dataset — so
+  a fallback render legitimately looks smaller than the live site.
+- Coverage is capped by design, not by accident: this is ~4% of the market, and
+  every extra percent costs requests against a site that actively challenges
+  automation. The ceiling is a deliberate compliance choice.
+
+### Ingestion was blocked earlier the same day — and why that matters
+
+On 2026-10-16 two manual large runs were served a PerimeterX challenge (HTTP 403)
+on their **very first** request and aborted, writing 0 records
+(`jobs/full-scrape-20261016{,b}/run_log.md`). Roughly 30 minutes later the
+scheduled CI run — same proxy pool, same 5s pacing — completed all ~150 requests
+and loaded 1,011 listings.
+
+So the block was transient pool reputation, not our volume (it failed on request
+#1, before volume could matter), and not a permanent wall. The stop rule is
+unchanged and unconditional: **any CAPTCHA challenge aborts the run**, and there
+is no retry-until-it-passes logic anywhere in the pipeline.
 
 `docs/websiteplan.md` is the Vercel build plan for the portfolio website
 (kept here for convenience — it is not part of the data pipeline).

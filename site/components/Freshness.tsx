@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { fmtCount } from "@/lib/market";
 import type { Meta } from "@/lib/types";
 
 export default function Freshness() {
@@ -17,7 +18,7 @@ export default function Freshness() {
       Data as of {date}
       {/* detail only where there is room; the hero repeats these numbers */}
       <span className="hidden sm:inline">
-        {" · "}{meta.total_tracked ?? "—"} tracked (sample) · {meta.high_count ?? "—"} High · source {meta.source}
+        {" · "}{meta.total_tracked != null ? fmtCount(meta.total_tracked) : "—"} tracked (sample) · {meta.high_count != null ? fmtCount(meta.high_count) : "—"} High · source {meta.source}
       </span>
       {!meta.live && (
         <span className="ml-1 rounded bg-amber-100 px-1 text-amber-800">

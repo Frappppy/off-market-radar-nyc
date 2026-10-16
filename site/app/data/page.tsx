@@ -1,7 +1,7 @@
 "use client";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import Filters from "@/components/Filters";
-import { marketSizeLabel, MARKET_REFERENCE } from "@/lib/market";
+import { fmtCount, marketSizeLabel, MARKET_REFERENCE } from "@/lib/market";
 import { useFilters, toDealsQuery } from "@/lib/useFilters";
 import { SCORE_COLORS, type Deal } from "@/lib/types";
 
@@ -95,7 +95,7 @@ function DataInner() {
           <p className="eyebrow">Data · Export</p>
           <h1 className="text-2xl font-bold tracking-tight text-zinc-50">Take the call list with you</h1>
           <p className="mt-1 text-sm text-zinc-400">
-            Click any column to sort. The CSV below is exactly these {sorted.length} filtered rows — drop it into your CRM or driving app.
+            Click any column to sort. The CSV below is exactly these {fmtCount(sorted.length)} filtered rows — drop it into your CRM or driving app.
           </p>
           <p className="mt-1 text-xs text-zinc-500">
             Sample data: a capped, robots-respecting Zillow scan. Citywide inventory is {marketSizeLabel}{" "}
@@ -106,7 +106,7 @@ function DataInner() {
           className="ml-auto rounded-lg bg-zinc-100 px-4 py-2 text-sm font-semibold text-zinc-950 hover:bg-white"
           href={`/api/deals?${query}&format=csv`}
         >
-          Download {sorted.length} rows as CSV
+          Download {fmtCount(sorted.length)} rows as CSV
         </a>
       </div>
       <div className="grid items-start gap-3 lg:grid-cols-[280px_1fr]">
