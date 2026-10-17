@@ -147,7 +147,7 @@ city-agnostic (zip/lat-long drive the map).
 
 The credibility tier (`docs/roadmap.md`) is implemented and live at
 <https://off-market-radar-nyc.vercel.app> (CLI deployment
-`dpl_6KSEA2Lt2gqrNtg8RH83eBUofuUp`, 2026-10-16): stale listings no longer presented as
+`dpl_FuzAiwPgnQTjorvhaRPVWgw4839f`, 2026-10-17): stale listings no longer presented as
 current, a per-listing price-history panel, shareable filter links, and an ingestion
 health card that reports the run which produced the data. A mistyped `?min_dom=` no
 longer falls back to the frozen sample.
@@ -177,6 +177,25 @@ viewport cell at 0 violations and the chart data still conveyed as `sr-only` tex
 than hidden. `robots.txt` and `sitemap.xml` (both 404s) now exist, and each route has its
 own title and description. Detail and raw numbers:
 `jobs/tier1-gate-fixes/evidence/gate-fixes.md`.
+
+A fourth pass — a **takeover** of the two subagent runs left working, rather than waiting on
+them — re-verified the design-QA verdict (including refuting its pin hit-area "defect": the
+leaves measure 24.5 × 24.5 across 12/12 and the old 23 × 24 was the probe's own artefact, so
+no CSS changed) and closed two of its nits: the header's explorer links were bare paths, so
+navigating by header silently dropped `?score=`/`?min_dom=` and reset the cohort 43 → 133 while
+`/trends` claims *"Reflects the current map filters"*; and `/trends` claimed *"0 listings shown"*
+while its first fetch was in flight — a *failed* fetch claimed zero too, so the error path now
+says so. The same pass root-caused a **pre-existing** CLS breach the gate never measured: the
+`Freshness` strip is 78 px loading, 118 px live and ~464 px with its detail line and frozen pill,
+but the header's first row leaves it 135 px at 390 — so a frozen `live:false` fallback wrapped
+the row and pushed `<main>` down 28 px for **0.1466**, and the detail line wrapped the row from
+640–830 for **0.317** in the *normal* path (the deployed pre-fix build scores 0.31728, so not
+new, but invisible because the CLS cells are 390/1280/1350). All three fixed: below `lg` the
+frozen state folds into one date-carrying pill, the wrapper is `max-w-[130px] truncate` so it
+can never reflow that row again, and the detail line shows from 1024 px up — the first breakpoint
+above the band. Measured on the deployment: **0.00190** and **0.00119 / 0.00099**, with CLS
+12/12 and axe 0/0 unchanged. Disclosed trade: between 640 and 1023 px the header no longer shows
+the tracked/High/source detail. Detail: `jobs/tier1-gate-fixes/evidence/gate-fixes.md` § 11.
 
 - **The SQL migration and the `vw_listing_history` grant are applied** (production
   Neon, 2026-10-16 ~13:55Z), so the price-history panel reads real data:
