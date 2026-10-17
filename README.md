@@ -298,7 +298,7 @@ vercel deploy --prod --yes --project off-market-radar-nyc   # run from the repo 
 
 Two traps in that interaction, both hit and both still worth knowing. A deploy with
 `--prod` is a **production** deployment, so if it fails, Vercel emails "production
-deployment failed" — the email above came from a 475 ms config rejection of a deploy
+deployment failed": here that email came from a 475 ms config rejection of a deploy
 attempted from the wrong directory, not from a broken push. And because the CLI stamps
 the local git branch, commit SHA and commit message onto whatever it uploads, that failed
 deploy reads "on branch main at commit …" in the dashboard — which is exactly why the top
