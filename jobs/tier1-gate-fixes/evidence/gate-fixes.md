@@ -14,9 +14,10 @@ phantom would have risked a property that was already correct. One **new** regre
 
 | | |
 |---|---|
-| Repo HEAD | `f85a6e4` (the gate-fix work is uncommitted at the time of writing) |
+| Repo HEAD | `de0f291` (the gate-fix work, committed and pushed) |
 | Deployed | `dpl_2RjajPjG5rtqENnnzjQEDPEwzjWe` → `off-market-radar-f1wxct749`, aliased to `https://off-market-radar-nyc.vercel.app` |
 | Local target | `next build` + `next start -p 3222` from `site/` |
+| Live target | §9 re-ran the harness with `BASE=https://off-market-radar-nyc.vercel.app` |
 | typecheck | `npm run typecheck` → exit 0 |
 | build | `npm run build` → exit 0, all four routes `○ (Static)` (the F1 property is intact) |
 | Known warning | `jiti` "Critical dependency: the request of a dependency is an expression" via `lib/db.ts → @neon/config` — pre-existing, not from this work |
@@ -40,6 +41,8 @@ CLS instrumented by `jobs/tier1-cls-diagnosis/scripts/cls-init.js`.
 | `seo.js` | `/robots.txt`, `/sitemap.xml`, `/favicon.ico`, `/manifest.webmanifest`, per-route title/description/canonical/OG counts |
 | `overflow-probe.js` | every element whose real box exceeds `innerWidth` (added by this session) |
 | `repeat-cell.js` | repeat a single cell N times, local or against any `BASE` — used as the control experiment (added by this session) |
+| `popstate.js` | **back/forward and cross-page navigation**: UI filter change → URL, `history.back()/forward()`, SPA nav away and back, then the same cohort as a deep link — checking the rendered cohort matches the URL at every step (added by the live round) |
+| `scrollprobe.js` | **the scroll question, decided**: `documentElement.scrollWidth`, whether `scrollTo(9999,0)` actually moves, and the widest visible elements — per route × 390/768/1280 (added by the live round) |
 
 ## 0. The session that started this died mid-edit
 
@@ -257,7 +260,67 @@ shell's `workdir` both fail on a path containing `[` `]` (use `Set-Location -Lit
 the command); a rebuild while `next start` is running needs the server restarted; `node.exe` writes to
 stderr, so PowerShell renders CLI banners as `NativeCommandError` noise that is not a failure.
 
-## 9. Residuals — not fixed, stated
+## 9. The live round - the same harness re-run against the deployment
+
+Everything above was measured against a **local** production build. The tree was then
+deployed (`dpl_2RjajPjG5rtqENnnzjQEDPEwzjWe`, alias
+`https://off-market-radar-nyc.vercel.app`) and the harness re-run with
+`BASE=https://off-market-radar-nyc.vercel.app`, so these claims rest on the deployed
+artifact. Two scripts were added for this round: `popstate.js` (a path nobody had tested)
+and `scrollprobe.js` (to settle a contradiction).
+
+**9.1 The refuted claim holds on the deployment.** 20/20 loads across `/trends` and
+`/data` at 390 and 1280 rendered the deep-linked 43-row cohort, one `/api/deals` request
+per load, cold path included.
+
+**9.2 Back/forward and cross-page navigation (`popstate.js`) - consistent, and new.**
+
+| step | URL | slider | rendered | api |
+|---|---|---|---|---|
+| 1 initial | `/map` | 60 | 133 of 1011 | 1 |
+| 2 UI sets DOM to 90 | `/map?score=High,Medium&min_dom=90` | 90 | 122 of 1011 | 2 |
+| 3 `history.back()` | *(left the site)* | - | - | 2 |
+| 4 `history.forward()` | `/map?score=High,Medium&min_dom=90` | 90 | 122 of 1011 | 3 |
+| 5 SPA nav to `/data` | `/data` | 60 | 133 rows as CSV | 4 |
+| 6 SPA nav back to `/map` | `/map` | 60 | 133 of 1011 | 5 |
+| 7 deep link `?min_dom=90` | `/map?min_dom=90` | 90 | 122 of 1011 | 1 |
+
+The invariant held at every step: **the rendered cohort matched the URL**, and the
+UI-driven state (step 2) equals the deep-link-driven state (step 7),
+`uiMatchesDeepLink: true`. Zero console errors across all seven steps. Five loads, five
+API requests — no duplicate or racing fetch on popstate. One design fact, now explicit:
+filter writes use `router.replace`, so a filter change creates **no** history entry;
+the URL is shareable, and `back()` is page-level, not filter-level.
+
+**9.3 No horizontal scrolling anywhere** (`scrollprobe.js`, nine cells:
+`/`, `/map`, `/trends`, `/data`... measured `/map`, `/trends`, `/data` × 390/768/1280).
+At every cell `documentElement.scrollWidth == innerWidth` and `scrollTo(9999, 0)` moved
+**0 px**. The `/trends` and `/data` tables still lay out ~500–600 px wide at 390, but
+inside their `overflow-x-auto` wrappers, which is the intent; the page does not scroll.
+The `sr-only` overflow regression from §5 is absent on the deployment.
+
+**9.4 A contradictory reading resolved by measuring, not choosing.** The pins probe
+reported `docWidth=411` at `/map@390`; CLS reported `hscroll=false` at the same cell.
+`scrollprobe.js` re-measured the live map at 390: `scrollWidth=390`, `canScrollX=0`, and
+no visible element whose right edge passed the viewport. The 411 was a transient inside
+the leaflet container, not a scrolling page.
+
+**9.5 Pins on the deployment: 23.9 × 24.4** visible area over twelve leaves, matching
+the local 24×24 reading and confirming §4's conclusion that the gate's 23×24 was a probe
+artefact. CSS unchanged.
+
+**9.6 axe on the deployment: 0 violations, 0 serious/critical on all eight route × width
+cells**, `unnamedControls=0`, `emptyTh=0`, heading sequences sequential.
+
+**9.7 The push experiment.** Commit `de0f291` was pushed to
+`Frappppy/off-market-radar-nyc` while watching the deployment list: **no deployment was
+created** — the newest stayed `f1wxct749`, with `deployments: []` and `hooks: []` on the
+project and every historical deployment `Production`-scoped. Push-to-deploy is therefore
+provably still unwired, independently of the earlier `vercel git connect` failure. The
+outstanding step is the user's: install the Vercel GitHub App on the repo, and connect
+*after* pushing, since connecting can trigger a deploy of the newest commit.
+
+## 10. Residuals - not fixed, stated
 
 1. **Marker / counter paint latency** (§7): 2 of 27 sampled loads lagged the fetched cohort at the
    sample point. Not a data race; needs its own investigation (candidate: the map's marker layer and

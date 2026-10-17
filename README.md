@@ -207,6 +207,15 @@ authentication.) The sound evidence is behavioural: **every deployment in this p
 branches — there are no GitHub deployment records, and `vercel git connect` fails. The
 only reliable confirmation is a push that produces a Preview deployment.
 
+**That test was run, and it confirms the integration is unwired.** Pushing `de0f291`
+(74 files) to `main` while watching the deployment list created **no deployment at
+all**: the newest stayed `f1wxct749`, the project reported `deployments: []` and
+`hooks: []`, and no GitHub deployment record appeared. So a push neither builds nor
+deploys today, and the cause is the missing App installation rather than the root
+directory or the repo's visibility — those were already fixed. The `hooks: []` reading
+is recorded above as *insufficient* evidence, not as the reason; the push is the reason
+it is now settled.
+
 The project's Root Directory was `.`, which was wrong: the Next.js app lives in
 `site/` and the repo root holds no `package.json`, so any Git-triggered build
 would have failed immediately. It is now `site` (`vercel project update
@@ -245,6 +254,10 @@ without touching production or triggering that email, run `vercel deploy` withou
 The remaining manual step is installing the Vercel GitHub App on
 `Frappppy/off-market-radar-nyc` and connecting the project. After that, a push to
 `main` builds from `site/` and deploys with no CLI step.
+
+**Connect only after the intended code is already pushed.** Connecting the project can
+itself trigger a build of the newest commit, so pushing first and connecting second
+avoids an accidental deploy of whatever happens to be at the tip.
 
 **Order matters when you do that.** Connecting the repository can trigger a deploy of the
 newest commit, so connect only after the work you want live is committed *and* pushed —

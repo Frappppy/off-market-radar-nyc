@@ -307,6 +307,44 @@ corrected two of its own**.
 - **CLS was re-verified after every change, not once**: all twelve cells under 0.1, worst
   **0.0189** (`/@390`), `hscroll=false` and zero console/network errors in every cell.
 
+### Live round: the same gates re-run against the deployment (2026-10-17)
+
+Every number above was measured against a **local** production build. The fixes were then
+deployed (`dpl_2RjajPjG5rtqENnnzjQEDPEwzjWe`, aliased to
+`https://off-market-radar-nyc.vercel.app`) and the whole harness re-run against the live
+URL, so the claims now rest on the deployed artifact rather than on a local build of the
+same tree. One previously **untested** path was added, and one contradictory reading was
+resolved.
+
+- **The race fix holds on the deployment.** 20/20 loads across `/trends` and `/data` at
+  both 390 and 1280 (cold path included) rendered the deep-linked cohort — 43 rows for
+  `?score=High&min_dom=90` — with exactly one `/api/deals` request per load.
+- **Back/forward and cross-page navigation were never tested at all** (`popstate.js`).
+  They are consistent: setting the DOM slider to 90 in the UI writes
+  `?score=High,Medium&min_dom=90` and renders 122 of 1011; `history.back()` leaves the
+  site and `history.forward()` restores that exact state (122, slider 90); navigating to
+  `/data` and back re-derives defaults from the now-empty URL (133 rows) rather than
+  serving the stale cohort; and a fresh deep link to `?min_dom=90` renders the
+  **same** cohort as the UI-driven one (`uiMatchesDeepLink: true`). Five loads, five API
+  requests, zero console errors. One design fact made explicit: filter writes go through
+  `router.replace`, so a filter change does **not** create a history entry — the URL is
+  shareable, but `back()` is page-level, not filter-level.
+- **No horizontal scrolling anywhere, on any route, at any width.** The `sr-only`
+  regression is gone on the deployment: `documentElement.scrollWidth == innerWidth` and
+  `scrollTo(9999, 0)` moves 0 px at `/`, `/map`, `/trends`, `/data` × 390/768/1280 (nine
+  cells). The tables on `/trends` and `/data` still render ~500–600 px wide at 390, but
+  inside their `overflow-x-auto` wrappers, which is the intent — the page does not scroll.
+- **A contradictory reading was resolved by measuring rather than choosing.** The pins
+  probe reported `docWidth=411` at `/map@390` while CLS reported `hscroll=false` at the
+  same cell. `scrollprobe.js` measured the map at 390 on the live site:
+  `scrollWidth=390`, and the window cannot scroll horizontally. The 411 was a transient
+  reading inside the leaflet container, not a scrolling page.
+- **Pins re-measured on the deployment: 23.9 × 24.4** visible area over twelve leaves —
+  consistent with the 24×24 local reading and confirming that the gate's 23×24 was a
+  probe artefact. The CSS was left alone.
+- **axe re-run live: 0 violations, 0 serious/critical on all eight route × width cells**,
+  `unnamedControls=0`, `emptyTh=0`, heading sequences sequential on every route.
+
 ---
 
 ## Tier 2 — Differentiation
