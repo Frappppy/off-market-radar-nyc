@@ -3,6 +3,7 @@ import Link from "next/link";
 import "./globals.css";
 import "maplibre-gl/dist/maplibre-gl.css";
 import Freshness from "@/components/Freshness";
+import FilterNav from "@/components/FilterNav";
 
 export const metadata: Metadata = {
   // S3 — relative URLs (canonical, openGraph.url, og:image) are composed against
@@ -43,13 +44,21 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <Link href="/" className="order-1 shrink-0 whitespace-nowrap font-bold tracking-tight text-zinc-50">
               OFF-MARKET RADAR <span className="font-normal text-zinc-400">· NYC ▾</span>
             </Link>
-            <nav className="order-3 flex w-full gap-4 text-sm text-zinc-300 sm:order-2 sm:w-auto sm:gap-3">
-              <Link className="tap hover:underline" href="/">Overview</Link>
-              <Link className="tap hover:underline" href="/map">Map</Link>
-              <Link className="tap hover:underline" href="/trends">Trends</Link>
-              <Link className="tap hover:underline" href="/data">Data</Link>
-            </nav>
-            <div className="order-2 ml-auto min-w-0 sm:order-3">
+            {/* FilterNav (client) keeps the query string on the three explorer
+                links, so the /trends promise "Reflects the current map filters"
+                stays true when navigating by header rather than by deep link. */}
+            <FilterNav />
+            {/* F6 — below lg the first header row leaves this box between 135px
+                (a 390px phone: a 211px logo and a 12px gap) and 183px (640px:
+                logo + a 190px nav), and Freshness is 118px live, 78px loading
+                and ~464px when the detail line and the frozen pill are both
+                present. max-w + truncate make it structurally unable to wrap
+                that row onto a second line, which is what pushed <main> down
+                28px for 0.1466 CLS frozen at 390 and 0.3173 CLS live at
+                640–830 (gate-fixes.md §11). 130px is the measured ceiling under
+                the live width at every width below lg; 1024 and up has the room
+                and is uncapped. */}
+            <div className="order-2 ml-auto min-w-0 max-w-[130px] truncate lg:order-3 lg:max-w-none">
               <Freshness />
             </div>
           </div>

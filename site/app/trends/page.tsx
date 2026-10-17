@@ -69,6 +69,17 @@ function TrendsInner() {
   const [filters] = useFilters();
   const [trends, setTrends] = useState<ZipTrend[]>([]);
   const [deals, setDeals] = useState<Deal[]>([]);
+  // Same reason data/page.tsx carries one: before the first response there are
+  // no rows, and "In filter 0 listings shown" / "No High-motivation listings in
+  // the current filter." are CLAIMS about the data, not a loading state. The QA
+  // gate measured that flash at 150–350 ms on every arrival at /trends.
+  const [loaded, setLoaded] = useState(false);
+  // And a failed fetch must not become a claim either. `loaded && loadError` is
+  // a third state data/page.tsx already models: without it, the catch branch
+  // below (deals=[], loaded=true) renders "In filter 0 listings shown" — the
+  // same lie in the other direction, observed once on a transient network
+  // failure during the production verification of this very fix.
+  const [loadError, setLoadError] = useState(false);
   // Gate fix — see lib/useUrlSearch.ts. The store returns the SSR placeholder
   // for the first render, so a filter-aware fetch must wait for `ready` or it
   // races the reader's own query. This page had no staleness guard either, so
@@ -95,12 +106,24 @@ function TrendsInner() {
   // already use, so a late response can never land on a newer query.
   useEffect(() => {
     if (!ready) return;
+    // Back to "loading" on every query change: the old cohort answers the old
+    // question and must not be shown as if it answered the new one.
+    setLoaded(false);
+    setLoadError(false);
     const ac = new AbortController();
     fetch(`/api/deals?${toDealsQuery(filters, { limit: "500" })}`, { signal: ac.signal })
       .then((r) => r.json())
-      .then((j) => setDeals(j.deals ?? []))
+      .then((j) => {
+        if (ac.signal.aborted) return;
+        setDeals(j.deals ?? []);
+        setLoaded(true);
+      })
       .catch(() => {
-        if (!ac.signal.aborted) setDeals([]);
+        if (!ac.signal.aborted) {
+          setDeals([]);
+          setLoadError(true);
+          setLoaded(true);
+        }
       });
     return () => ac.abort();
   }, [ready, filters]);
@@ -109,13 +132,23 @@ function TrendsInner() {
     const prices = deals.map((d) => d.price).filter((v): v is number => v != null);
     const doms = deals.map((d) => d.days_on_market).filter((v): v is number => v != null);
     const cut = deals.filter((d) => (d.price_drop_pct ?? 0) > 0).length;
+    // `loadError` renders "!" rather than a number: a failed fetch is not a
+    // measurement of zero listings, and saying so would be the same lie the
+    // loading state was fixed for.
     return [
-      ["In filter", String(deals.length), "listings shown"],
-      ["With a price cut", deals.length > 0 ? `${Math.round((cut / deals.length) * 100)}%` : "—", `${cut} listings`],
-      ["Median price", fmtUsd(median(prices)), "current filter"],
-      ["Median DOM", median(doms) != null ? String(Math.round(median(doms) as number)) : "—", "days on market"],
+      ["In filter", loadError ? "!" : loaded ? String(deals.length) : "…", loadError ? "couldn't load" : "listings shown"],
+      ["With a price cut", loaded && !loadError && deals.length > 0 ? `${Math.round((cut / deals.length) * 100)}%` : "—", loaded && !loadError ? `${cut} listings` : "current filter"],
+      ["Median price", loadError ? "!" : loaded ? fmtUsd(median(prices)) : "…", loadError ? "couldn't load" : "current filter"],
+      ["Median DOM", loadError ? "!" : loaded && median(doms) != null ? String(Math.round(median(doms) as number)) : "…", loadError ? "couldn't load" : "days on market"],
     ] as Array<[string, string, string]>;
-  }, [deals]);
+  }, [deals, loaded, loadError]);
+
+  // The chart summaries are the charts' accessible form, so they carry the same
+  // three states the KPIs do. `sentence()` alone would tell a screen reader
+  // "no data in the current filter" during the first 150–350 ms of every load —
+  // and, worse, after a failed fetch, where it is false in the other direction.
+  const describe = (label: string, items: string[]) =>
+    loadError ? `${label}: couldn't load the listings.` : !loaded ? `${label}: loading.` : sentence(label, items);
 
   const { lineData, topZips } = useMemo(() => {    const counts = new Map<string, number>();
     for (const t of trends) counts.set(t.zip, (counts.get(t.zip) ?? 0) + t.listing_count);
@@ -243,7 +276,7 @@ function TrendsInner() {
         <ChartCard
           title="Avg price drop % by ZIP — last 30 days"
           caption="One point per ZIP per daily load — a missing day is a missed ingest, detailed in the card above."
-          summary={sentence(
+          summary={describe(
             "Average price drop % by ZIP, latest daily snapshot",
             lineData.length === 0
               ? []
@@ -267,7 +300,7 @@ function TrendsInner() {
         <ChartCard
           title="High-motivation count by ZIP"
           caption="Where the call list concentrates — canvass these ZIPs first."
-          summary={sentence("High-motivation listings by ZIP", highByZip.map((r) => `${r.zip} ${r.High}`))}
+          summary={describe("High-motivation listings by ZIP", highByZip.map((r) => `${r.zip} ${r.High}`))}
         >
           <ResponsiveContainer>
             <BarChart data={highByZip}>
@@ -283,7 +316,7 @@ function TrendsInner() {
         <ChartCard
           title="Motivation mix"
           caption="Share of High / Medium / Low in the current filter."
-          summary={sentence(
+          summary={describe(
             "Motivation mix",
             mix.map((m) => `${m.name} ${m.value} listings (${pctText(deals.length > 0 ? (m.value / deals.length) * 100 : null)})`)
           )}
@@ -311,7 +344,7 @@ function TrendsInner() {
         <ChartCard
           title="DOM histogram"
           caption="Stale listings pile up past 90 days — that is the High-score pool."
-          summary={sentence("Days on market histogram", domHist.map((b) => `${b.bucket} days: ${b.n} listings`))}
+          summary={describe("Days on market histogram", domHist.map((b) => `${b.bucket} days: ${b.n} listings`))}
         >
           <ResponsiveContainer>
             <BarChart data={domHist}>
@@ -327,7 +360,7 @@ function TrendsInner() {
         <ChartCard
           title="Price distribution"
           caption="Where filtered inventory sits — useful for picking a price band to farm."
-          summary={sentence("Price distribution", priceHist.map((b) => `${b.bucket}: ${b.n} listings`))}
+          summary={describe("Price distribution", priceHist.map((b) => `${b.bucket}: ${b.n} listings`))}
         >
           <ResponsiveContainer>
             <BarChart data={priceHist}>
@@ -343,7 +376,7 @@ function TrendsInner() {
         <ChartCard
           title="Avg $/sqft by property type"
           caption="Normalizes price across types — condos usually top the per-foot ranking."
-          summary={sentence(
+          summary={describe(
             "Average price per square foot by property type",
             sqftByType.map((r) => `${r.type} ${r.avg} dollars per square foot`)
           )}
@@ -363,7 +396,7 @@ function TrendsInner() {
           span
           title="DOM vs price drop — every listing"
           caption="Top-right is the strike zone: stale AND cutting. Color = motivation score."
-          summary={sentence(
+          summary={describe(
             "Days on market versus price drop, coloured by motivation score",
             (["High", "Medium", "Low"] as MotivationScore[]).map(
               (s) => `${s}: ${scatter.filter((p) => p.score === s).length} listings`
@@ -436,7 +469,10 @@ function TrendsInner() {
                     <td className="px-1.5 py-1 sm:px-2">{d.url && <a className="underline" href={d.url} target="_blank" rel="noreferrer">Zillow ↗</a>}</td>
                   </tr>
                 ))}
-                {topHigh.length === 0 && (
+                {loaded && loadError && (
+                  <tr><td colSpan={8} className="px-1.5 py-4 text-center text-zinc-500 sm:px-2">Couldn&apos;t load listings — reload to try again.</td></tr>
+                )}
+                {loaded && !loadError && topHigh.length === 0 && (
                   <tr><td colSpan={8} className="px-1.5 py-4 text-center text-zinc-500 sm:px-2">No High-motivation listings in the current filter.</td></tr>
                 )}
               </tbody>

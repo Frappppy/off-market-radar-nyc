@@ -345,6 +345,35 @@ resolved.
 - **axe re-run live: 0 violations, 0 serious/critical on all eight route × width cells**,
   `unnamedControls=0`, `emptyTh=0`, heading sequences sequential on every route.
 
+### Takeover round: two QA nits closed, one more CLS defect fixed (2026-10-17)
+
+The two subagents still listed as running were reclaimed rather than waited on: `design-qa`
+returned a full verdict on takeover (all six of its findings verified; its **pin hit-area**
+finding refuted — the leaves measure 24.5 × 24.5 on 12/12, and the 23 × 24 was the probe's own
+artefact, so no CSS changed), and the general fix session had been dead 11 hours with its work
+already merged. Two nits it raised were fixed, plus one defect found while measuring them.
+
+- **The header nav dropped the filter.** `/trends` promises *"Reflects the current map filters"*,
+  but the static header links were bare paths, so navigating by header silently reset the cohort
+  (43 → 133). New client component `site/components/FilterNav.tsx` carries the query on the three
+  explorer links; verified live — clicking Trends lands on `IN FILTER: 43`.
+- **`/trends` claimed "0 listings shown" while loading**, and a *failed* fetch claimed zero too.
+  Three states now: `…` while loading, the count when loaded, `!` / *"Couldn't load listings"* on
+  error — with the 7 `sr-only` chart summaries saying *"loading."* / *"couldn't load the
+  listings."* rather than *"no data in the current filter."* Six assertions, all true, live and local.
+- **Two CLS defects, one pre-existing, both fixed** (`jobs/tier1-gate-fixes` §11). The
+  `Freshness` strip is 78 px loading, 118 px live and ~464 px with its detail line and frozen pill,
+  while the header's first row gives it only **135 px** at 390 — so a frozen (`live:false`)
+  fallback wrapped the row, pushed `<main>` down 28 px and cost **0.1466 CLS**; the same wrap from
+  the detail line cost **0.317** at 640–830 in the *normal* path, which the gate never measured
+  because its CLS cells are 390/1280/1350. Fixes: the frozen state folds into one date-carrying
+  pill below `lg` (the badge is folded, not dropped — `/map` has no other frozen indicator), the
+  wrapper is `max-w-[130px] truncate` below `lg` so it can never reflow that row again, and the
+  detail line now appears from **1024 px** up, the first breakpoint above the band.
+  **Measured: 0.00190 and 0.00119/0.00099 respectively, on the deployed build.** Disclosed
+  trade: between 640 and 1023 px the header no longer shows the tracked/High/source detail.
+  Tablet widths should be added to `cls.js` — that gap is why 0.317 went unnoticed.
+
 ---
 
 ## Tier 2 — Differentiation

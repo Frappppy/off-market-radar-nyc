@@ -332,3 +332,102 @@ outstanding step is the user's: install the Vercel GitHub App on the repo, and c
    `docs/roadmap.md`.
 5. This report's accessibility verdict is **axe-only**. axe finds what rules encode; it is not a
    substitute for a human screen-reader pass, and no such pass has been done.
+6. **The CLS gate is 390/1280/1350 only.** §11 found a 0.317 breach at 640px that no gate cell
+   was measuring, and only caught it because a new probe happened to run that width. Tablet
+   widths should be added to `cls.js` rather than left to ad-hoc probes.
+
+## 11. The takeover round — two nits closed, and a third CLS defect found while measuring them
+
+**11.1 The two running subagents were taken over, not waited on.** The `design-qa` session was
+reclaimed mid-run and returned a complete verdict; the general "Fix gate-found defects" session had
+been dead for 11 hours, and its work had already landed inline in `de0f291`. design-qa's six
+findings all held on re-measurement. Its **pin hit-area finding was REFUTED as a defect**: the leaves
+measure **24.5 × 24.5 across 12/12** — the old 23 × 24 was the probe's own artefact, so no CSS change
+was warranted. Three findings it raised on its own initiative were new: the freshness badge is
+reachable at `score=Low` with a lowered floor (`/data?score=Low&min_dom=14&page=12` and
+`/data?score=Low&min_dom=0&zip=10306`, 18 × 14 fully visible), **`srSilenced=0`** (7/7 chart summaries
+carry real values and 16/16 SVGs sit inside `aria-hidden`), and the `"In filter 0"` flash lasts
+**< 1.5 s** on `/trends` arrival rather than a persistent lie.
+
+**11.2 Nit 1 — the header nav dropped the filter.** `/trends` promises *"Reflects the current map
+filters"*, but the static header links were bare paths, so navigating by header silently reset the
+cohort (43 → 133). Fixed with a new client component `site/components/FilterNav.tsx`, which builds the
+three explorer hrefs from the current URL search params. Verified by `navfix.js` on **both** builds:
+hrefs on `/data?score=High&min_dom=90` are `["/","/map?score=High&min_dom=90","/trends?score=High&min_dom=90","/data?score=High&min_dom=90"]`,
+and clicking Trends lands on `IN FILTER: 43`, not 133.
+
+**11.3 Nit 2 — `/trends` claimed "0 listings shown" while the first fetch was in flight.** A `loaded`
+state now gates the KPI (`…` while loading) and the empty row alike.
+
+**11.4 A regression this round's own fix introduced — caught before it shipped.** The `catch` branch
+of that fix set `deals = []` with `loaded = true`, which turned a *failed* fetch into a false zero
+claim: exactly the bug §11.3 fixed, reintroduced one branch over. A third state `loadError` was added,
+mirroring `data/page.tsx`: KPIs render `!` / *"couldn't load"*, the row renders *"Couldn't load
+listings — reload to try again."*, and a `describe()` wrapper makes the 7 `sr-only` chart summaries
+say *"loading."* / *"couldn't load the listings."* instead of *"no data in the current filter."*
+`trendstates.js` asserts all six states — `{"loadingShowsEllipsis":true,"loadingMakesNoZeroClaim":true,"loadedShowsRealCount":true,"errorDoesNotClaimZero":true,"errorSaysError":true,"errorSummarySaysError":true}` — locally and live.
+
+**11.5 F6 — the intermittent `/data@390 = 0.1466` CLS breach, root-caused and fixed.**
+The `Freshness` header strip changes width three times: **78 px** loading, **118 px** live, and up to
+**~464 px** once the detail line and the frozen pill are both present. The header's first row at 390
+leaves it **135 px** (390 − 211 px logo − 12 px gap), so when `/api/meta` fell back to the bundled
+sample (`live:false`) the `frozen fallback` pill could not fit, the flex row wrapped onto a **third**
+header line, and `<main>` moved down **28 px** → **0.1466 CLS**. This is not speculative: the bad run
+was reproduced on the frozen path, and `header390.js` with `live:true` shows a stable `rows=3
+headerH=69` header throughout.
+
+Four parts, all in `site/components/Freshness.tsx` + `site/app/layout.tsx`:
+
+1. Below `lg` the frozen state folds into **one pill carrying the date** (`Frozen · 2026-10-15`,
+   114 px) instead of prefix + pill. The badge is *folded, not dropped* — `/map` renders neither
+   `IngestionHealth` nor `HeroStats`, so hiding it on a phone would have removed the frozen signal
+   entirely there.
+2. The `Data as of {date}` prefix becomes `sr-only lg:not-sr-only` while frozen, so the pill never
+   has to share the row with it.
+3. The wrapper in `layout.tsx` is **`max-w-[130px] truncate` below `lg`** — the measured ceiling
+   under the live width at every width below 1024 — making the box *structurally* unable to reflow
+   the header, whatever string it is handed in future.
+4. The detail line's threshold moved from `sm:inline` to `lg:inline` (§11.6).
+
+**11.6 The same mechanism at tablet widths — 0.317, pre-existing, also fixed.**
+While re-measuring §11.5, a probe at 640 and 768 px returned **0.31726 / 0.31675** — three times the
+0.1 budget, in the **normal live path**. Attribution first: the **deployed pre-fix build scored
+0.31728 at the same width**, so this was not introduced here, and it had never surfaced because the
+CLS gate only measures 390/1280/1350. Mechanism (`rowgeo.js`, measured not guessed): from 640–830 the
+logo (211) + nav (190) leave **~183 px**, but the detail line makes the box **374 px**, so it always
+wrapped — `headerH` 41 → 69 on every load, `<main>` +28 px. The fix is the threshold move to `lg`:
+**1024 is the first standard breakpoint above the band**, which is the same *"detail only where there
+is room"* rule this span always had, with the breakpoint set by measurement instead of by assumption.
+Result: `/data@640 = 0.00119`, `/data@768 = 0.00099`, and `rowgeo.js` now shows `rows=1 headerH=41
+fresh=118` at 640/700/768/900.
+
+**11.7 Disclosed behavior change.** Between **640 and 1023 px** the header no longer shows
+*"· 1,011 tracked (sample) · 43 High · source zillow"*; it shows `Data as of <date>` only, as it
+already did on phones. Those figures remain in the hero on `/` and in `IngestionHealth` on `/data`
+and `/trends`. This is a deliberate trade: keeping the line visible at those widths is what caused
+the 0.317 shift.
+
+**11.8 Verification — local and production, identical.**
+
+| check | local | production |
+|---|---|---|
+| CLS 12 cells, worst | 0.01889 | 0.01889 |
+| axe 8 cells | 0 violations / 0 serious+critical | 0 violations / 0 serious+critical |
+| frozen header height stable @390/640/768/1280 | 69=69, 41=41, 41=41, 41=41 | identical |
+| `/data@390` **frozen** CLS | **0.00190** (was 0.1466) | 0.00190 |
+| `/data@640` live CLS | **0.00119** (was 0.31728) | 0.00119 |
+| `/data@768` live CLS | **0.00099** (was 0.31675) | 0.00099 |
+| worst frozen CLS, any width | 0.00924 @1280 — `anyOverBudget: false` | identical |
+| `navfix.js` | all true | all true |
+| `trendstates.js` | 6/6 true | 6/6 true |
+
+Reported honestly: the first `navfix.js` run after two heavy sweeps returned `navFilterHolds=false`
+because the KPI was sampled while still showing `…`; a solo re-run and the production run both return
+`true` with `IN FILTER: 43`. New probes for this round: `navfix.js`, `trendstates.js`,
+`header390.js`, `frozencls.js`, `tabletcls.js`, `rowgeo.js`. Raw JSON under
+`%TEMP%\opencode\gate\out\` (`frozencls.json`, `tabletcls.json`, `rowgeo.json`).
+
+**11.9 Deploy.** `dpl_FuzAiwPgnQTjorvhaRPVWgw4839f`
+(`off-market-radar-8trkq9hql-frappppy.vercel.app` → alias `https://off-market-radar-nyc.vercel.app`),
+`vercel deploy --prod` from the repo root. Every number in §11.8's production column was measured
+against that deployment. Push-to-deploy remains unwired pending §9.7.
