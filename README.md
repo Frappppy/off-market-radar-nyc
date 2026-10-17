@@ -227,9 +227,19 @@ Pushing `3495fea` (an empty commit, no file changes) produced
 `dpl_9wcKJJhChPefgAfgKrXYa4Xwt478` — `READY`, `target=production`, seven seconds later,
 with no CLI command run — and the production alias moved to it
 (`off-market-radar-nyc.vercel.app` → `off-market-radar-80u84hga7-…`). Branches build
-**Preview** deployments as well: pushing `f1fdea7` on a throwaway branch created
-`dpl_8xdcWxYpif62bycKyNKaoY24WhBz` with `target=preview` within seconds (commit, branch
-and that preview deployment have since been removed).
+**Preview** deployments as well: a branch pushed with its own commit (`5acf286`,
+`3c0d9b5`) produced a `target=preview` deployment that reached `READY` in ~50 s.
+
+Two things about previews that are easy to get wrong. **They are not publicly
+reachable.** The project runs Vercel Authentication
+(`ssoProtection: {deploymentType: "all_except_custom_domains"}`), so in the same breath an
+anonymous fetch of a preview URL gets `302 → https://vercel.com/sso-api?url=…` while the
+production alias returns `200` — previews are for people signed in to the team, not links
+to hand a client. And **deleting a deployment mid-build is reported as a failed build**:
+cleaning up a preview while it was still `BUILDING` produced a "Preview deployment
+failed — Deployment not found. Was it deleted?" email, because Vercel recorded the
+cancellation as the build's outcome. Let a preview reach `READY` before removing it, or
+expect that email.
 
 **How to tell a push-triggered build from a CLI one — `sha` and `branch` are not it.**
 An earlier version of this section claimed the two were *"dashboard-indistinguishable"*.
