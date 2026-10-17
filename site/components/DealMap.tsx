@@ -6,6 +6,35 @@ import { SCORE_COLORS, type Deal } from "@/lib/types";
 
 // MapLibre + free Carto basemap (no token). Pins clustered client-side with
 // supercluster; click cluster → zoom, click pin → onPick(deal).
+//
+// S1 — the pins are keyboard-operable buttons, not clickable divs: role=button,
+// tabindex=0 and an Enter/Space handler, plus a specific accessible name
+// ("<address> · High motivation · DOM 134") instead of maplibre's default
+// aria-label="Map marker", which was the identical string on all 34 markers.
+// Focusability forced a second fix: a redraw that destroys and rebuilds every
+// marker drops focus to <body> mid-tab, so the redraw must be driven by a
+// genuinely new `deals` array and nothing else.
+// F6 — that used to be a 1.5s `setInterval` that *checked* for a new array,
+// which still tore down and rebuilt the whole marker set plus a fresh
+// Supercluster index ~40 times a minute while the map sat idle, and detached
+// whatever marker a click was landing on. It is now a `useEffect` keyed on
+// `deals`, so an idle map does no work at all.
+const markerLabel = (d: Deal) =>
+  `${d.address ?? d.listing_id} · ${d.motivation_score} motivation · DOM ${
+    d.days_on_market ?? "unknown"
+  }`;
+
+// Enter and Space are the two keys that activate a button. Space is " ", never
+// "Spacebar" (that name is legacy IE/Edge only).
+const activate = (el: HTMLElement, run: () => void) => {
+  el.onkeydown = (ev: KeyboardEvent) => {
+    if (ev.key === "Enter" || ev.key === " ") {
+      ev.preventDefault(); // Space would otherwise scroll the page
+      run();
+    }
+  };
+};
+
 export default function DealMap({
   deals,
   onPick,
@@ -20,6 +49,11 @@ export default function DealMap({
   const markersRef = useRef<maplibregl.Marker[]>([]);
   const dealsRef = useRef(deals);
   dealsRef.current = deals;
+  // F6 — `renderRef` lets the `deals` effect below reach the render closure
+  // that was created with the map; `readyRef` stops a redraw before the style
+  // has loaded (the `load` handler draws whatever is current by then).
+  const renderRef = useRef<(() => void) | null>(null);
+  const readyRef = useRef(false);
   const pickRef = useRef(onPick);
   pickRef.current = onPick;
 
@@ -63,10 +97,13 @@ export default function DealMap({
       const byId = new Map(rows.map((d) => [d.listing_id, d]));
       for (const c of clusters) {
         const [lng, lat] = c.geometry.coordinates;
+        const isCluster = (c.properties as { cluster?: boolean }).cluster === true;
+        const count = (c.properties as { point_count?: number }).point_count ?? 0;
+        const deal = isCluster ? undefined : byId.get((c.properties as { id: string }).id);
+        if (!isCluster && !deal) continue;
         const el = document.createElement("div");
-        if ((c.properties as { cluster?: boolean }).cluster) {
-          const count = (c.properties as { point_count: number }).point_count;
-          el.className = "maplibre-pin";
+        el.className = "maplibre-pin";
+        if (isCluster) {
           el.style.width = "28px";
           el.style.height = "28px";
           el.style.background = "#2563eb";
@@ -80,25 +117,46 @@ export default function DealMap({
             map.easeTo({ center: [lng, lat], zoom: map.getZoom() + 2 });
           };
         } else {
-          const d = byId.get((c.properties as { id: string }).id);
-          if (!d) continue;
-          el.className = "maplibre-pin";
-          el.style.background = SCORE_COLORS[d.motivation_score];
-          el.title = `${d.address ?? d.listing_id} · ${d.motivation_score}`;
-          el.onclick = () => pickRef.current(d);
+          el.style.background = SCORE_COLORS[deal!.motivation_score];
+          el.title = `${deal!.address ?? deal!.listing_id} · ${deal!.motivation_score}`;
+          el.onclick = () => pickRef.current(deal!);
         }
-        markersRef.current.push(new maplibregl.Marker({ element: el }).setLngLat([lng, lat]).addTo(map));
+        // maplibre stamps aria-label="Map marker" on the marker element, so the
+        // accessible name and keyboard wiring go on AFTER it is constructed and
+        // attached — otherwise they are overwritten.
+        const marker = new maplibregl.Marker({ element: el }).setLngLat([lng, lat]).addTo(map);
+        markersRef.current.push(marker);
+        el.tabIndex = 0;
+        el.setAttribute("role", "button");
+        if (isCluster) {
+          el.setAttribute("aria-label", `Zoom in on ${count} listings`);
+          activate(el, () => map.easeTo({ center: [lng, lat], zoom: map.getZoom() + 2 }));
+        } else {
+          el.setAttribute("aria-label", markerLabel(deal!));
+          activate(el, () => pickRef.current(deal!));
+        }
       }
     };
-    map.on("load", render);
+    renderRef.current = render;
+    map.on("load", () => {
+      readyRef.current = true;
+      render();
+    });
     map.on("moveend", render);
-    const t = setInterval(render, 1500); // re-render when deals prop changes
     return () => {
-      clearInterval(t);
+      renderRef.current = null;
+      readyRef.current = false;
       map.remove();
       mapRef.current = null;
     };
   }, []);
+
+  // F6 — the redraw trigger: a new `deals` array, and nothing else. The `load`
+  // handler above draws whatever is current when the style arrives, so this
+  // effect is a no-op until the map is ready.
+  useEffect(() => {
+    if (readyRef.current) renderRef.current?.();
+  }, [deals]);
 
   return <div ref={elRef} style={{ height, width: "100%", minHeight: 320 }} className="overflow-hidden rounded-xl border border-white/10" />;
 }

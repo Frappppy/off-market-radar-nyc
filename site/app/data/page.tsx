@@ -1,12 +1,14 @@
 "use client";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import Filters from "@/components/Filters";
+import HScroll from "@/components/HScroll";
 import IngestionHealth from "@/components/IngestionHealth";
 import SideCard from "@/components/SideCard";
 import { fmtCount, marketSizeLabel, MARKET_REFERENCE } from "@/lib/market";
 import { useFilters, toDealsQuery } from "@/lib/useFilters";
-import { SCORE_COLORS, type Deal, type FilterState } from "@/lib/types";
+import { setUrlSearch, useUrlSearch, useUrlSearchReady } from "@/lib/useUrlSearch";
+import { SCORE_COLORS, SCORE_PILL_TEXT, carriedOverBadge, daysSince, lastSeenLabel, type Deal, type FilterState } from "@/lib/types";
 
 const PAGE = 25;
 const SCORE_RANK: Record<string, number> = { High: 0, Medium: 1, Low: 2 };
@@ -65,18 +67,27 @@ const rowKey = (d: Deal) => `${d.source}:${d.listing_id}`;
 
 function ScorePill({ score }: { score: Deal["motivation_score"] }) {
   return (
-    <span className="inline-block rounded-full px-2 py-0.5 text-xs font-medium text-white" style={{ background: SCORE_COLORS[score] }}>
+    <span
+      className="inline-block rounded-full px-2 py-0.5 text-xs font-medium"
+      style={{ background: SCORE_COLORS[score], color: SCORE_PILL_TEXT[score] }}
+    >
       {score}
     </span>
   );
 }
 
 function DataInner() {
-  const sp = useSearchParams();
+  const sp = useUrlSearch();
   const router = useRouter();
   const pathname = usePathname();
 
   const [filters, setFilters, resetFilters] = useFilters();
+  // Gate fix — the store's first render is the SSR placeholder `""`, so a
+  // filter deep link would fetch the default cohort once before the real query
+  // arrives. Wait for `ready` so there is exactly one request, for the reader's
+  // own query. (The AbortController below still guards against a late response
+  // overwriting a newer one if the query changes again.)
+  const ready = useUrlSearchReady();
   const [deals, setDeals] = useState<Deal[]>([]);
   const [latestSnapshotDate, setLatestSnapshotDate] = useState<string | null>(null);
   const [picked, setPicked] = useState<Deal | null>(null);
@@ -116,6 +127,7 @@ function DataInner() {
       }
       const qs = p.toString();
       router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+      setUrlSearch(qs);
     },
     [sp, router, pathname]
   );
@@ -128,6 +140,7 @@ function DataInner() {
   );
 
   useEffect(() => {
+    if (!ready) return;
     const ac = new AbortController();
     // Back to "loading" on every query change: the old rows are answers to the
     // old question, so they must not be shown as if they answered the new one.
@@ -136,6 +149,7 @@ function DataInner() {
     fetch(`/api/deals?${query}`, { signal: ac.signal })
       .then((r) => r.json())
       .then((j) => {
+        if (ac.signal.aborted) return;
         setDeals(j.deals ?? []);
         setLatestSnapshotDate(j.latest_snapshot_date ?? null);
         setPicked(null);
@@ -152,7 +166,7 @@ function DataInner() {
         }
       });
     return () => ac.abort();
-  }, [query]);
+  }, [ready, query]);
 
   // The 3-column layout only applies at lg. Below it the panel stacks AFTER the
   // table, so on a 390px screen tapping a row opened the panel ~1000px below the
@@ -181,9 +195,18 @@ function DataInner() {
   };
 
   const pages = Math.max(1, Math.ceil(sorted.length / PAGE));
-  // A shared link can name a page the current filter set no longer has. Show the
-  // last real page instead of an empty table; the URL keeps the sender's page.
+  // S9 — a shared link can name a page the current filter set no longer has
+  // (or never had: `?page=99999`). We still render the last real page rather
+  // than an empty table, but the URL is brought into agreement with what is on
+  // screen instead of leaving the address bar claiming "page 3" over a "Page 2
+  // of 2" pager. Guarded on `loaded`: before the first response `sorted` is
+  // empty, so clamping then would rewrite a legitimate deep link to page 1
+  // before the data that justifies it has arrived.
   const page = Math.min(Math.max(requestedPage, 1), pages);
+  useEffect(() => {
+    if (!loaded || requestedPage === page) return;
+    writeView({ page });
+  }, [loaded, requestedPage, page, writeView]);
   const rows = sorted.slice((page - 1) * PAGE, page * PAGE);
 
   return (
@@ -239,7 +262,20 @@ function DataInner() {
           <Filters value={filters} onChange={onFilterChange} onReset={resetFilters} shown={loaded && !loadError ? sorted.length : null} total={null} />
         </div>
         <div className="panel overflow-hidden">
-          <div className="max-h-[calc(100svh-260px)] min-h-[400px] overflow-auto">
+          {/* S7 — the four right-hand columns are wider than a 390px column of
+              this grid. The scroll stays inside this box (no page-level
+              horizontal scroll); HScroll adds the disclosure and edge shadow.
+              F4 — the box used to be born at min-h-[400px] and grow to
+              max-h-[calc(100svh-260px)] when rows arrived (measured 400 -> 584
+              at 390, 400 -> 640 at 1280, 400 -> 680 at 1350), which moved the
+              paginator and the footer 184-280px down. The min-height now
+              mirrors the max-height it already had, so the box is born at its
+              final height. It costs the same floor the 400px rule already
+              imposed on a short result set. */}
+          <HScroll
+            className="max-h-[calc(100svh-260px)] min-h-[calc(100svh-260px)] overflow-auto"
+            hint="Swipe the table sideways for DOM, drop %, $/sqft and score →"
+          >
             <table className="w-full text-sm text-zinc-200">
               <thead className="sticky top-0 bg-[#1c1c1f]">
                 <tr className="text-left text-zinc-400">
@@ -247,11 +283,11 @@ function DataInner() {
                     <th key={c.key} className="px-2 py-2 font-medium">
                       <button
                         onClick={() => clickSort(c.key)}
-                        className={`inline-flex items-center gap-1 hover:text-zinc-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 ${c.numeric ? "tabular-nums" : ""}`}
+                        className={`tap items-center gap-1 hover:text-zinc-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 ${c.numeric ? "tabular-nums" : ""}`}
                         title={`Sort by ${c.label}`}
                       >
                         {c.label}
-                        <span className={sortKey === c.key ? "text-zinc-100" : "text-zinc-600"}>
+                        <span className={sortKey === c.key ? "text-zinc-100" : "text-zinc-500"}>
                           {sortKey === c.key ? (sortDir === 1 ? "▲" : "▼") : "△"}
                         </span>
                       </button>
@@ -262,6 +298,11 @@ function DataInner() {
               <tbody>
                 {loaded && !loadError && rows.map((d) => {
                   const isPicked = picked != null && rowKey(picked) === rowKey(d);
+                  // Recency: 0 = in the newest daily run, >= 1 = carried over
+                  // from an earlier run. Measured against the payload's own
+                  // latest snapshot, never the browser clock.
+                  const age = daysSince(d.snapshot_date, latestSnapshotDate);
+                  const carried = carriedOverBadge(age);
                   return (
                     <tr
                       key={rowKey(d)}
@@ -282,19 +323,40 @@ function DataInner() {
                         <td key={c.key} className={`px-2 py-1.5 ${c.numeric ? "tabular-nums" : ""}`}>
                           {c.key === "motivation_score" ? (
                             <ScorePill score={d.motivation_score} />
-                          ) : c.key === "address" && d.url ? (
-                            <a
-                              className="underline"
-                              href={d.url}
-                              target="_blank"
-                              rel="noreferrer"
-                              // The outbound link must keep working without also
-                              // opening the panel underneath it.
-                              onClick={(e) => e.stopPropagation()}
-                              onKeyDown={(e) => e.stopPropagation()}
-                            >
-                              {d.address}
-                            </a>
+                          ) : c.key === "address" ? (
+                            <>
+                              {d.url ? (
+                                <a
+                                  className="underline"
+                                  href={d.url}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  // The outbound link must keep working without also
+                                  // opening the panel underneath it.
+                                  onClick={(e) => e.stopPropagation()}
+                                  onKeyDown={(e) => e.stopPropagation()}
+                                >
+                                  {d.address}
+                                </a>
+                              ) : (
+                                cell(d, c.key)
+                              )}
+                              {/* Roadmap 1.1 — a row that is NOT in the newest
+                                  daily run is a different thing from one that
+                                  is; it used to render identically. */}
+                              {carried != null && (
+                                <span
+                                  className="ml-1 whitespace-nowrap rounded bg-amber-400/15 px-1 text-[10px] font-medium text-amber-400"
+                                  title={`${lastSeenLabel(age)} — snapshot ${d.snapshot_date}, not in the newest daily run`}
+                                >
+                                  {carried}
+                                  <span className="sr-only">
+                                    {" "}
+                                    — {lastSeenLabel(age)}, not in the newest daily run
+                                  </span>
+                                </span>
+                              )}
+                            </>
                           ) : (
                             cell(d, c.key)
                           )}
@@ -314,7 +376,7 @@ function DataInner() {
                 )}
               </tbody>
             </table>
-          </div>
+          </HScroll>
           <div className="flex items-center gap-2 border-t border-white/10 p-2 text-sm text-zinc-300">
             <button
               disabled={page === 1}

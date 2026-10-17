@@ -128,7 +128,15 @@ export default function IngestionHealth({ className = "" }: { className?: string
 
   return (
     <section
-      className={`panel p-3 ${className}`}
+      // F5 — the comment below has always claimed a fixed shape, but the card
+      // was measured at 357px (loading and live) and 377px (live === false,
+      // where the `frozen fallback` badge and its sentence wrap the header row
+      // onto a second line) at 390. 377 is the real worst-case geometry, so the
+      // card is now born at it on a phone, and at its real 156px height from
+      // 640px up. Only the live === false path was ever taller, and it is
+      // unreachable while /api/health reports live, which is why this changes
+      // nothing in the 12 measured cells.
+      className={`panel p-3 min-h-[377px] sm:min-h-[156px] ${className}`}
       aria-labelledby="ingestion-health-heading"
     >
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">

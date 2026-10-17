@@ -1,0 +1,29 @@
+﻿--- /api/deals?limit=5000 -> 200
+   keys: deals,live,count,window_days,latest_snapshot_date
+   count: 157 | deals.length: 157 | window_days: 1 | latest: 2026-10-16 | live: true
+   byDate: {"2026-10-16":157}
+--- /api/deals?limit=5000&window_days=0 -> 200
+   keys: deals,live,count,window_days,latest_snapshot_date
+   count: 157 | deals.length: 157 | window_days: 0 | latest: 2026-10-16 | live: true
+   byDate: {"2026-10-16":157}
+--- /api/deals?limit=5000&window_days=1 -> 200
+   keys: deals,live,count,window_days,latest_snapshot_date
+   count: 157 | deals.length: 157 | window_days: 1 | latest: 2026-10-16 | live: true
+   byDate: {"2026-10-16":157}
+--- /api/deals?limit=5000&score=Bogus -> 200
+   keys: deals,live,count,window_days,latest_snapshot_date
+   count: 1019 | deals.length: 1019 | window_days: 1 | latest: 2026-10-16 | live: true
+   byDate: {"2026-10-16":1011,"2026-10-15":8}
+--- /api/deals?limit=5000&min_dom=abc -> 200
+   keys: deals,live,count,window_days,latest_snapshot_date
+   count: 157 | deals.length: 157 | window_days: 1 | latest: 2026-10-16 | live: true
+   byDate: {"2026-10-16":157}
+--- /api/deals?limit=5000&score=Bogus&min_dom=abc -> 200
+   keys: deals,live,count,window_days,latest_snapshot_date
+   count: 1019 | deals.length: 1019 | window_days: 1 | latest: 2026-10-16 | live: true
+   byDate: {"2026-10-16":1011,"2026-10-15":8}
+--- /api/deals?limit=5000&score=High -> 200
+   keys: deals,live,count,window_days,latest_snapshot_date
+   count: 43 | deals.length: 43 | window_days: 1 | latest: 2026-10-16 | live: true
+   byDate: {"2026-10-16":43}
+

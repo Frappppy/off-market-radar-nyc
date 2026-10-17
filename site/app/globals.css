@@ -1,5 +1,18 @@
 @import "tailwindcss";
 
+/* S4 — AA contrast fix at the token level. Tailwind's stock zinc-500 (#71717b)
+   fails WCAG 2.1 AA (4.5:1 for text below 24px) on both surfaces this site
+   uses: measured 3.81:1 on the #141416 panel and 4.12:1 on the #09090b body.
+   #8b8b93 is the same step of the grey ramp, one notch lighter, and measures
+   5.44:1 / 5.89:1 — so `.eyebrow` section labels, 11–12px captions and the
+   /data empty-state text clear AA without moving a single element or
+   collapsing the High/Medium/Low distinction (those are separate tokens).
+   Overriding the theme token rather than ~20 call sites is deliberate: every
+   current and future `text-zinc-500` is then AA by construction. */
+@theme {
+  --color-zinc-500: #8b8b93;
+}
+
 @layer components {
   /* Lev-inspired surface: lifted near-black card, hairline border, large radius */
   .panel {
@@ -8,6 +21,18 @@
   /* Small-caps section label above headlines and stat numerals */
   .eyebrow {
     @apply text-[11px] font-semibold uppercase tracking-[0.14em] text-zinc-500;
+  }
+  /* S6 — WCAG 2.5.8 target size (minimum) is 24x24 CSS px. Several text-only
+     controls (Reset, header nav, footer links, "Full map →", sort headers)
+     measured 16–20px tall. This raises the HIT BOX only; the type scale and
+     spacing rhythm are untouched. Inline controls that sit in running text
+     (the two footer links) use vertical padding instead, so the glyph baseline
+     stays on the text baseline. */
+  .tap {
+    display: inline-flex;
+    align-items: center;
+    min-height: 1.5rem; /* 24px */
+    min-width: 1.5rem;
   }
 }
 
@@ -41,4 +66,42 @@ input:disabled, select:disabled {
   border: 2px solid #fff;
   box-shadow: 0 1px 3px rgb(0 0 0 / 0.4);
   cursor: pointer;
+}
+
+/* S1 — pins are real buttons (role/keyboard wired in components/DealMap.tsx),
+   so they need a visible focus ring; the white border alone is not a state. */
+.maplibre-pin:focus-visible {
+  outline: 2px solid #f4f4f5;
+  outline-offset: 2px;
+  z-index: 5;
+}
+
+/* S6 (touch) — the drawn pin stays 14px so clusters stay readable, but the
+   hit area becomes a true 24x24: a ::before box belongs to the element itself
+   for hit-testing, so a thumb landing near the pin still opens the deal card.
+   Two traps in the obvious `inset: -5px` formulation, both measured: (1) an
+   abs-positioned ::before is sized against the *padding* box, which this
+   element's 2px border shrinks to 10x10, so that version produced a 20x20
+   box, not 24; (2) the same rule hits the 28px cluster pins, which would then
+   get a 38px box. Sizing the pseudo explicitly and centring it avoids both and
+   leaves the cluster's own 28px box as the larger target. Deliberately NOT
+   rounded: border-radius clips hit-testing, so a 24px circle answers on the
+   axes but only reaches ~8.5px on the diagonal. The box is invisible, so it
+   can be square and give a real 24x24 in every direction. */
+.maplibre-pin::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 24px;
+  height: 24px;
+  margin: -12px 0 0 -12px;
+}
+
+/* S6 — maplibre's own attribution links ("MapLibre | © CARTO | OpenStreetMap")
+   render 12px/14px tall. Pad the link box, not the glyphs, to reach 24px. */
+.maplibregl-ctrl-attrib a {
+  display: inline-block;
+  padding: 5px 2px;
+  line-height: 14px;
 }

@@ -28,9 +28,17 @@ function parse(req: Request) {
     minPrice: numOrNull(u.searchParams.get("min_price")),
     maxPrice: numOrNull(u.searchParams.get("max_price")),
     type: u.searchParams.get("type"),
-    // Recency guard (roadmap 1.1): 0 = newest snapshot only. buildDealsQuery
-    // clamps again, so anything negative/absurd degrades to the safe default.
-    windowDays: windowRaw == null ? 0 : Math.max(0, Math.floor(windowRaw)),
+    // Recency guard (roadmap 1.1). DEFAULT 1, not 0: a 1-day window returns
+    // the newest snapshot PLUS anything carried over from the run before it,
+    // so a listing that dropped out of the latest run is still visible and its
+    // "last seen yesterday / N days ago" label means something. The old `0`
+    // default pinned exactly the newest snapshot, which made every returned
+    // row tautologically current and the per-listing freshness label
+    // structurally incapable of saying anything but "today".
+    // An explicit `window_days=0` still means "newest snapshot only", and
+    // buildDealsQuery clamps again, so anything negative/absurd degrades to a
+    // safe value instead of reaching SQL.
+    windowDays: windowRaw == null ? 1 : Math.max(0, Math.floor(windowRaw)),
     limit: Math.min(Number(u.searchParams.get("limit") ?? 500) || 500, 5000),
     offset: Number(u.searchParams.get("offset") ?? 0) || 0,
   };
@@ -91,6 +99,9 @@ export async function GET(req: Request) {
     // otherwise window_days=0 would return whatever the sample happens to hold
     // (rows from an older date included) while the response still reports 0 —
     // the same silent-stale-cohort bug the recency guard exists to prevent.
+    // window_days >= 1 (the /api/deals default) takes the whole sample, which
+    // for a single-snapshot CSV is every row, so every fallback listing
+    // honestly reports "last seen today".
     const newest = all.reduce((m, d) => (d.snapshot_date && d.snapshot_date > m ? d.snapshot_date : m), "");
     const cohort = q.windowDays <= 0 && newest ? all.filter((d) => d.snapshot_date === newest) : all;
     const filtered = applyFilters(cohort, f);

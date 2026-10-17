@@ -1,0 +1,37 @@
+﻿--- route /
+   canonical: https://off-market-radar-nyc.vercel.app
+   og:url   : https://off-market-radar-nyc.vercel.app
+   og:image : https://off-market-radar-nyc.vercel.app/opengraph-image?271fb4708f34da7c
+   og:image:width/height: 1200 / 630
+   tw:card  : summary_large_image
+   og:type  : website
+   og count: 11 | twitter count: 8
+   title    : Off-Market Radar ┬╖ NYC ΓÇö Motivated Seller Finder
+--- route /map
+   canonical: https://off-market-radar-nyc.vercel.app/map
+   og:url   : https://off-market-radar-nyc.vercel.app/map
+   og:image : https://off-market-radar-nyc.vercel.app/opengraph-image?271fb4708f34da7c
+   og:image:width/height: 1200 / 630
+   tw:card  : summary_large_image
+   og:type  : website
+   og count: 11 | twitter count: 8
+   title    : Off-Market Radar ┬╖ NYC ΓÇö Motivated Seller Finder
+--- route /data
+   canonical: https://off-market-radar-nyc.vercel.app/data
+   og:url   : https://off-market-radar-nyc.vercel.app/data
+   og:image : https://off-market-radar-nyc.vercel.app/opengraph-image?271fb4708f34da7c
+   og:image:width/height: 1200 / 630
+   tw:card  : summary_large_image
+   og:type  : website
+   og count: 11 | twitter count: 8
+   title    : Off-Market Radar ┬╖ NYC ΓÇö Motivated Seller Finder
+--- route /trends
+   canonical: https://off-market-radar-nyc.vercel.app/trends
+   og:url   : https://off-market-radar-nyc.vercel.app/trends
+   og:image : https://off-market-radar-nyc.vercel.app/opengraph-image?271fb4708f34da7c
+   og:image:width/height: 1200 / 630
+   tw:card  : summary_large_image
+   og:type  : website
+   og count: 11 | twitter count: 8
+   title    : Off-Market Radar ┬╖ NYC ΓÇö Motivated Seller Finder
+

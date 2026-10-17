@@ -1,7 +1,11 @@
 "use client";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useMemo } from "react";
 import { DEFAULT_FILTERS, type FilterState, type MotivationScore } from "@/lib/types";
+// F1 — `useSearchParams()` here is what made every route ship
+// BAILOUT_TO_CLIENT_SIDE_RENDERING. See lib/useUrlSearch.ts for the mechanism
+// and the CLS number it caused; this is a drop-in read of the same params.
+import { setUrlSearch, useUrlSearch } from "@/lib/useUrlSearch";
 
 const SCORES: MotivationScore[] = ["High", "Medium", "Low"];
 const isScore = (s: string): s is MotivationScore => (SCORES as string[]).includes(s);
@@ -19,7 +23,7 @@ export function useFilters(): [
   (patch: Partial<FilterState>, extra?: Record<string, string | null>) => void,
   () => void,
 ] {
-  const sp = useSearchParams();
+  const sp = useUrlSearch();
   const router = useRouter();
   const pathname = usePathname();
 
@@ -73,12 +77,14 @@ export function useFilters(): [
         else p.set(k, v);
       }
       router.replace(`${pathname}?${p.toString()}`, { scroll: false });
+      setUrlSearch(p.toString());
     },
     [state, sp, router, pathname]
   );
 
   const reset = useCallback(() => {
     router.replace(pathname, { scroll: false });
+    setUrlSearch("");
   }, [router, pathname]);
 
   return [state, set, reset];
@@ -87,6 +93,10 @@ export function useFilters(): [
 // Exactly the params /api/deals parses (score, min_dom, min_price, max_price,
 // type, zip). `score` is always written: an empty value is the deliberate
 // "all scores" selection, not a missing filter (see the semantic note above).
+//
+// `window_days` is deliberately NOT written: absent is the API's own default
+// (1 = the newest snapshot plus the run before it), and this query string is
+// also what the pages hand to /api/deals for their own fetches.
 export function toDealsQuery(f: FilterState, extra?: Record<string, string>): string {
   const p = new URLSearchParams();
   p.set("score", f.score.join(","));
@@ -98,3 +108,64 @@ export function toDealsQuery(f: FilterState, extra?: Record<string, string>): st
   for (const [k, v] of Object.entries(extra ?? {})) p.set(k, v);
   return p.toString();
 }
+
+// ---- S8: disclosure for link params we could not honour --------------------
+// `score=Bogus` collapses to [] on both sides, which the API reads as "no
+// motivation filter" — so a typo silently WIDENED the result set and the UI
+// said nothing about it. `min_dom=abc` does the same thing in reverse: it
+// falls back to the default floor. Both data behaviours are deliberate and
+// unchanged (see the D1/D2 notes above); these helpers exist so the filter
+// panel can say what it did with the input instead of leaving the reader to
+// guess. Pure functions, so the same wording is used on every page.
+
+const SCORE_HINT = "High / Medium / Low";
+
+export interface FilterNotice {
+  tone: "warn" | "info";
+  text: string;
+}
+
+/** Score tokens the reader sent that are not High/Medium/Low. */
+export function unrecognisedScores(raw: string | null): string[] {
+  if (raw == null) return [];
+  return raw.split(",").map((s) => s.trim()).filter((s) => s !== "" && !isScore(s));
+}
+
+/** The raw `min_dom` value when it was present but not a usable number. */
+export function unrecognisedMinDom(raw: string | null): string | null {
+  if (raw == null || raw.trim() === "") return null;
+  return Number.isFinite(Number(raw)) ? null : raw.trim();
+}
+
+/** Everything the panel should disclose about the current link, in one place. */
+export function filterNotices(
+  value: FilterState,
+  rawScore: string | null,
+  rawDom: string | null
+): FilterNotice[] {
+  const out: FilterNotice[] = [];
+  const badScores = unrecognisedScores(rawScore);
+  if (badScores.length > 0) {
+    const quoted = badScores.map((s) => `\u201c${s}\u201d`).join(", ");
+    out.push({
+      tone: "warn",
+      text: `${quoted} ${
+        badScores.length === 1 ? "is not a motivation score" : "are not motivation scores"
+      } (${SCORE_HINT}) \u2014 ignored, so this view ${
+        value.score.length === 0 ? "shows every score" : `shows ${value.score.join(", ")}`
+      }.`,
+    });
+  }
+  const badDom = unrecognisedMinDom(rawDom);
+  if (badDom != null) {
+    out.push({
+      tone: "warn",
+      text: `\u201c${badDom}\u201d is not a number \u2014 the DOM floor fell back to ${value.minDom} days.`,
+    });
+  }
+  if (badScores.length === 0 && value.score.length === 0) {
+    out.push({ tone: "info", text: "No score selected \u2014 showing all scores." });
+  }
+  return out;
+}
+

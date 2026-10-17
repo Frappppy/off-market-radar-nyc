@@ -10,9 +10,10 @@
 > `/api/meta` returns `live:true` (82 tracked / 2 High); `/api/deals`,
 > `/api/zips`, CSV export and all 4 routes return 200 on production, public
 > without auth.
-> Remaining: footer GitHub repo link is still a placeholder (repo not pushed);
-> `recharts` 2.x is deprecated upstream (bump to v3 later); V2 = Softr portal
-> + alerts.
+> (Those counts are the V1 sign-off snapshot; current live figures are in
+> README § Verification status.)
+> Remaining: `recharts` 2.x is deprecated upstream (bump to v3 later);
+> V2 = Softr portal + alerts.
 > Decision: Vercel Hobby (free) for presentation layer. GitHub = code, Neon = data, Vercel = presentation.
 
 ## 1. Concept
@@ -106,7 +107,7 @@ Perf: cap map to latest snapshot only, paginate table, cluster pins client-side 
 
 | Piece | Free home | URL |
 |---|---|---|
-| Showcase + app | Vercel Hobby | `*.vercel.app`, auto-SSL, deploy on git push |
+| Showcase + app | Vercel Hobby | `*.vercel.app`, auto-SSL — deploys by CLI from the repo root (`vercel deploy --prod --yes --project off-market-radar-nyc`); no Git integration, so a push does not deploy (README § Deploy mechanics) |
 | Alt static | GitHub/Cloudflare Pages | `*.github.io` |
 | DB | Neon Free | (paused when idle — first query slow; note it on site) |
 | Robot | GitHub Actions Free | daily cron ~450 min/mo, safe |

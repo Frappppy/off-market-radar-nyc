@@ -104,6 +104,22 @@ export const SCORE_COLORS: Record<MotivationScore, string> = {
   Low: "#9aa0a6",
 };
 
+// S4 — the pill is the one place a motivation token is used as a BACKGROUND
+// behind text, so it needs its own foreground. `text-white` (what every pill
+// used to hardcode) measured #ffffff on #e6a817 = 2.10:1 — the worst pair in
+// the QA report. Dark ink on that same amber background measures 9.45:1, so
+// the brand amber is kept exactly as-is and
+// only the label colour changes. High keeps white (5.02:1); dark ink on
+// #d62728 would be 3.96:1 and would fail. Low's #9aa0a6 takes dark ink too
+// (7.5:1) — white on it was 2.64:1, which the report missed because the
+// default filter (High+Medium) never renders a Low pill. The three hues stay
+// distinct, so the score is still readable at a glance.
+export const SCORE_PILL_TEXT: Record<MotivationScore, string> = {
+  High: "#ffffff",
+  Medium: "#09090b",
+  Low: "#09090b",
+};
+
 export interface FilterState {
   score: MotivationScore[]; // default [High, Medium]
   minDom: number; // default 60
@@ -154,4 +170,31 @@ export function daysSince(
   const b = dayNumber(latestSnapshotDate);
   if (a == null || b == null) return null;
   return b - a;
+}
+
+// One wording, two surfaces (the /data table row and the detail panel), so the
+// two can never drift apart. `age` is (newest snapshot − this row's snapshot)
+// in whole days, i.e. the output of daysSince. The reference is always a
+// snapshot date from the payload, never the browser clock: the dataset is a
+// snapshot, so the label must still be right when the page is cached, when the
+// bundle is stale, or when the reader's machine clock is wrong.
+export function lastSeenLabel(age: number | null): string {
+  if (age == null) return "last seen —";
+  if (age <= 0) return "last seen today";
+  if (age === 1) return "last seen yesterday";
+  return `last seen ${age} days ago`;
+}
+
+// True when the row was NOT part of the newest daily run and only reached the
+// page through the recency window (window_days >= 1). Those rows are
+// meaningfully different from the current cohort and are marked as such.
+export function isCarriedOver(age: number | null): boolean {
+  return age != null && age >= 1;
+}
+
+// Short row-level form of the same fact, for surfaces with no room for the
+// sentence above (the /data table).
+export function carriedOverBadge(age: number | null): string | null {
+  if (!isCarriedOver(age)) return null;
+  return age === 1 ? "1d" : `${age}d`;
 }

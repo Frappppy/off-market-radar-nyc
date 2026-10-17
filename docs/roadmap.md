@@ -1,6 +1,6 @@
 # Roadmap — Off-Market Radar NYC
 
-Status: **Tier 1 built, gated, not yet deployed** — see "Build status — Tier 1"
+Status: **Tier 1 built, verified, and deployed** — see "Build status — Tier 1"
 below. Recorded 2026-10-16.
 Owner: website / product stage. Supersedes nothing — `docs/websiteplan.md` remains
 the V1 build plan; this file covers what comes next.
@@ -121,10 +121,11 @@ already gated on it.
 
 ## Build status — Tier 1 (2026-10-16)
 
-Built on branch `main` (uncommitted at time of writing). Deployment is a separate
-step: **the SQL migration has not been applied to production and the site has not
-been redeployed** — see `docs/apply_tier1_migration.md`, which carries the apply
-order and the two hazards that make the order matter.
+Built on branch `main`, deployed, and migrated. The site shipped first (CLI,
+2026-10-16), then the SQL migration ran on the production Neon branch the same
+day (~13:55Z) in the documented order: column → `dashboard/views.sql` → the
+four-object `GRANT`. Apply order, post-apply figures, and the two hazards that
+make the order matter: `docs/apply_tier1_migration.md`.
 
 **1.1 — stale listings + freshness.** The bug fix is a recency guard in
 `site/lib/db.ts` that keeps only the newest snapshot cohort. Measured on
@@ -136,21 +137,42 @@ the unfiltered surface, the totals and the CSV. The proper fix also landed —
 the loader's upsert and flipped false after `STALE_RUNS = 3` consecutive missed
 successful runs. The guard is deliberately a no-op while fewer than 3 successful
 runs exist, because with too little history there is no honest way to separate
-"gone" from "not scraped this time".
+"gone" from "not scraped this time". Applied in production, `is_active` reads
+`active=1019 inactive=0`, which is correct at two successful runs.
 
-*Open decision:* the guard defaults to `window_days = 0` (exact newest cohort).
-That is what removes the stale rows, but it also means every row's date *is* the
-newest, so the per-listing "last seen N days ago" label reads "today" for the
-whole cohort and only becomes informative if the window is loosened. `window_days`
-is a live query param, so this is a one-constant change rather than a redeploy.
+*Decision taken:* on the trade-off between removing the stale rows and keeping the
+per-listing "last seen N days ago" label meaningful, the label won. The default is
+now `window_days = 1`, so a row's date is no longer *always* the newest snapshot and
+the label carries information again. Consequence, stated plainly: the unfiltered
+surface and the CSV return **1,019 rows — 1,011 from the newest cohort plus the 8
+carried-over rows** the `window_days = 0` guard had been hiding. Those 8 are all
+`Low`-motivation and are now **visibly marked as carried over** in the table rather
+than silently presented as current. The alternative, `window_days = 0`, still returns
+exactly 1,011 rows, so both cohorts remain reachable through the filter. `window_days`
+is a live query param, so this is a one-constant change rather than a redeploy — the
+revert is equally cheap.
+
+*Where that is visible, exactly:* `score` itself defaults to `High,Medium`, and all 8
+carried-over rows are `Low`, so the **default view is unchanged by this flip — 157
+rows, every one of them from the newest run, every label still reading "today"**. The
+change shows up only when `Low` is included (explicitly, or by clearing `score`) **and**
+the DOM floor is lowered — `min_dom` *also* defaults to `60` and the 8 carried rows have
+DOM ≤ 14, so `/data?score=Low` on its own still returns **zero** badged rows. That was
+measured against the deployed build after an earlier version of this paragraph named that
+URL as the path to them, which was wrong. The shorthand "the label is informative now" should
+be read that narrowly: the label becomes informative for precisely the rows that were
+carried over, because *that is the only thing that can make a row's date differ from
+the newest one* — the informativeness and the visible stale rows are the same fact, not
+two features. Under `window_days = 0` there is nothing to label, by construction.
 
 **1.2 — price-history panel.** Clicking a pin, a table row, or a keyboard-focused
 row opens a panel with a price sparkline, every recorded reduction with its date,
 DOM, $/sqft, the motivation reason, last-seen, and the outbound link. Backed by
 the new `vw_listing_history` view and `GET /api/listing/[id]`. No new data
-collection. Requires the view *and* its `GRANT` in production; until then the
-endpoint degrades to `{history: [], unavailable: true}` and the panel says so
-rather than erroring the map.
+collection. Requires the view *and* its `GRANT` in production, both now applied:
+`vw_listing_history` holds 1,093 rows and `/api/listing/145558321` returns
+`live:true` with a two-point series. Without the grant the endpoint still degrades
+to `{history: [], unavailable: true}` rather than erroring the map.
 
 **1.3 — shareable links.** Already implemented in V1 (see the correction above).
 Three genuine defects were fixed instead: (a) an empty motivation selection
@@ -176,14 +198,116 @@ stale-marking predicate falsified — it originally deactivated the whole table 
 an empty run history, which is fixed. `pytest` 142 passed,
 `dashboard/verify_contract.py` 54/54.
 
-**Known gaps.** `/api/listing` returns a single `unavailable` shape for every
-error while the panel asserts a specific cause, so a connection timeout would
-render a false explanation. The frozen-CSV fallback echoes `window_days` without
-applying it (harmless today: the sample holds one snapshot date). Both are
-recorded here rather than silently shipped.
+**Known gaps.** `/api/listing` cannot distinguish its failure modes. A listing id
+that does not exist comes back as a *successful* empty read (`live:true`,
+`history:[]`, and no `unavailable` flag) because the query simply matches no rows
+now that the view exists — so "no such listing" looks identical to "this listing
+has no recorded history". `unavailable:true` is reserved for the exception path,
+and the panel asserts a specific cause for it, so a connection timeout would render
+a false explanation. The frozen-CSV fallback echoes `window_days` without applying
+it (harmless today: the sample holds one snapshot date). Both are recorded here
+rather than silently shipped.
+
+### Post-deploy hardening round (design QA + layout stability)
+
+A design-QA pass on the deployed build raised twelve findings (S1–S12, with measured
+values and line numbers, in `jobs/tier1-ui-check/evidence/qa_report.md`) plus one
+behaviour follow-up on the "last seen" label. The figures below were measured by the
+sessions that made the fixes, against a local production build of this tree; the
+*deployed* build is gated separately (`jobs/tier1-deployed-qa/`).
+
+- **S1–S9 fixed, S10 partial, S11/S12 not addressed** — per-finding status with the
+  measurement behind each is in `jobs/tier1-ui-fixes/evidence/ui-fixes.md`. Headline
+  numbers: the Medium motivation badge measured **2.10:1** and now measures **9.45:1**
+  (Low 7.53:1, High 5.02:1), so all five contrast pairs pass AA; the 36 map pins are
+  `role="button"` + `tabindex="0"` with Enter opening the panel; unnamed enabled
+  controls and orphan labels are at zero. **S10** (the `/trends` wrapper clipping 20 px
+  at 390) is partial — padding tightened and a scroll affordance added, but the
+  exact-390 overflow could not be measured in this environment. **S11** (bundle weight,
+  328 kB) and **S12** (transient-timeout fallback) were left out of scope deliberately
+  rather than half-done.
+- **Two bugs found after that pass, and fixed.** (a) The panel counted the *same* price
+  cut once per snapshot day, because `previous_price` is a persistent column carried on
+  every daily row — `455058452` claimed two −6.35% reductions for a single cut. A cut is
+  now recorded only on the day whose price differs from the previous day's, which keeps
+  genuinely distinct cuts apart (`30776634`: −0.1%, then −4.77%) while collapsing the
+  carried-over duplicate. (b) `og:image`, `og:url`, `twitter:image` and
+  `rel="canonical"` were all absent; the metadata block now carries `metadataBase` and a
+  per-route canonical, and `app/opengraph-image.tsx` renders the card with the built-in
+  `next/og` (`/opengraph-image` → 200 `image/png`, 50,028 B) — no new dependency, and no
+  binary asset that can drift from the design.
+- **Layout stability was a defect, not a nitpick.** All four routes shipped
+  `BAILOUT_TO_CLIENT_SIDE_RENDERING` because `lib/useFilters.ts` called
+  `useSearchParams()` inside the page body's Suspense boundary, so the served `<main>`
+  was 151–155 characters. Because `main` is `flex-1`, the 465 px footer sat inside the
+  first screen at 390 px and left the viewport when hydration inserted the page: a
+  **0.558** shift, byte-identical on three routes. Worst cells before: `/map` 0.559,
+  `/data` 0.560, `/trends` 0.803 at 390; `/trends` 1.025 at 1350. **Lighthouse's mobile
+  CLS of 0 was an artefact** — touch emulation marks shifts `hadRecentInput` with no
+  input events, so a 0 there was never a pass. The filter state now comes from an
+  external store (`lib/useUrlSearch.ts`, `useSyncExternalStore` with a `""` server
+  snapshot), so all four routes still prerender (`○ Static`) with **zero bailout
+  markers** and no TTFB cost. All twelve cells are now under 0.1; worst remaining is
+  0.022. Full before/after and per-fix detail: `jobs/tier1-cls-fix/evidence/cls-fix.md`;
+  root-cause attribution: `jobs/tier1-cls-diagnosis/evidence/cls-diagnosis.md`.
+- **Left knowingly unfixed, and recorded as such**: map pin *first paint* can be
+  unstable — now quantified rather than merely observed (1 load in 6 still had only 2 of
+  43 markers drawn 13 s in, with no failed request and the correct API response); two
+  19 px-tall inline links remain on `/data` and `/trends`; and the hero `<h1>` is still
+  data-gated (~0.019 at 390, under budget, but data-gated). The statement that "no
+  automated accessibility run exists" is **superseded** — see the next section.
+
+### The automated gates, and what they refuted (2026-10-17)
+
+The round above was verified by manual measurement, because axe and Lighthouse could not
+run in that environment. They run now, and the first automated pass
+(`jobs/tier1-deployed-qa/evidence/qa_report.md`) **refuted one claim outright and
+corrected two of its own**.
+
+- **The refuted claim was a live correctness bug.** `/trends?score=High&min_dom=90`
+  rendered the *default* cohort (133 rows) instead of the deep-linked one (43) in most
+  runs. Cause: the CLS fix's external store returns `""` on its first render, so every
+  filter-aware fetch fired twice — once against the SSR default, once against the
+  reader's query — and `/trends` was the only one of the three pages without a staleness
+  guard, so the stale response won. Fixed by exposing the store's `ready` flag
+  (`useUrlSearchReady()`) and gating the first fetch on it **and** adding an
+  `AbortController` guard to all three pages. Re-proved with six consecutive loads per
+  route: `/trends` reads 43 six times out of six, with **exactly one `/api/deals` request
+  per load** — the wasted request is gone, not merely losing the race. Detail:
+  `jobs/tier1-gate-fixes/evidence/gate-fixes.md` §1.
+- **The accessibility claims above were overstated, and were fixed rather than
+  softened.** axe (4.10.2) found `/trends` `svg-img-alt` **serious ×78 nodes**,
+  `empty-table-header`, an unnamed SVG control, and `/map` `heading-order` (h1 → h3).
+  All are now fixed — chart summaries as `sr-only` text with the SVG `aria-hidden`,
+  `rootTabIndex={-1}` on the pie (recharts defaults it to 0, which had turned the
+  78-node violation into one `aria-hidden-focus`), an `sr-only` name in the empty `<th>`,
+  and the footer headings promoted to h2. Every route × width cell is now **0
+  violations, 0 serious/critical**, and the summaries carry the real series values, so
+  nothing was silenced to get there. This is axe-only: it is not a screen-reader pass,
+  and none has been done.
+- **Two gate premises were wrong, and measuring beat "fixing".** The gate reported pins
+  at 23×24; an `elementFromPoint` sweep that scrolls each pin into view and reports both
+  the integer and the sub-pixel box measured **24×24 / 24.5×24.5** on twelve leaves, so
+  the CSS was left alone — the 23 was a probe artefact. And the carried-over badge path
+  the gate named (`/data?score=Low`) yields zero badged rows because `min_dom` also
+  defaults to 60; the rows need `Low` *and* a lowered DOM floor.
+- **A fix in this round introduced a regression, and the re-run caught it.** The
+  `sr-only` name added to the table's empty `<th>` is `position: absolute` with no
+  positioned ancestor, so its containing block sat *outside* the `overflow-x-auto`
+  wrapper — and a scroll container does not clip such a descendant. It escaped the clip
+  and took `/trends` from `scrollWidth` 390 to **491** at 390 px (a 101 px horizontal
+  scroll, and the likely cause of one flaky 0.153 CLS reading). Fixed with `relative` on
+  the cell and re-measured at 390. `job/tier1-gate-fixes/scripts/overflow-probe.js`
+  exists so the next person can find this class of bug in one command.
+- **SEO gaps closed**: `robots.txt` and `sitemap.xml` were 404s, and all four routes
+  shared one `<title>` and description. Both files now exist (no new dependency) and each
+  route has its own title and description with its canonical unchanged. `favicon.ico` and
+  `manifest.webmanifest` remain 404 deliberately — one needs a binary, the other a
+  dependency, and neither is load-bearing here.
+- **CLS was re-verified after every change, not once**: all twelve cells under 0.1, worst
+  **0.0189** (`/@390`), `hscroll=false` and zero console/network errors in every cell.
 
 ---
-
 
 ## Tier 2 — Differentiation
 
@@ -269,9 +393,9 @@ Recorded so they are not mistaken for oversights:
 
 ## Recommended order
 
-1. ~~**Tier 1**~~ — **built 2026-10-16** (see "Build status — Tier 1"; SQL not yet
-   applied to production, site not yet redeployed). Three quarters of it was
-   small, and 1.1 turned out to be closer to a bug than a feature.
+1. ~~**Tier 1**~~ — **built, deployed, and migrated 2026-10-16** (see "Build
+   status — Tier 1"). Three quarters of it was small, and 1.1 turned out to be
+   closer to a bug than a feature.
 2. **Tier 2.1 change feed** — the headline feature; makes the daily pipeline the
    visible product.
 3. **Tier 2.2**, then **Tier 3** as retention becomes the constraint.

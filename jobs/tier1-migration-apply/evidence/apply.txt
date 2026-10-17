@@ -1,0 +1,94 @@
+PRODUCTION MIGRATION APPLY - 2026-10-16 19:54:53Z
+
+[exit 0] column is_active present?
+0
+[exit 0] vw_listing_history present?
+0
+[exit 1] reader grants BEFORE (vw_latest, zip_drop, pipeline_runs, history)
+psql.exe : ERROR:  relation "vw_listing_history" does not exist
+At line:17 char:9
++   $r = (& $psql -v ON_ERROR_STOP=1 -d $env:DATABASE_URL -At -c $sql 2 ...
++         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (ERROR:  relatio... does not exist:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+[exit 0] cohorts BEFORE (view rows / newest cohort)
+1019 / 1011
+[exit 0] step 1 migration
+BEGIN
+ALTER TABLE
+COMMIT
+[exit 0] step 2 views
+BEGIN
+DROP VIEW
+DROP VIEW
+psql.exe : psql:dashboard/views.sql:21: NOTICE:  view "vw_listing_history" does not exist, skipping
+At line:37 char:8
++ $r2 = (& $psql -v ON_ERROR_STOP=1 -d $env:DATABASE_URL -f 'dashboard\ ...
++        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (psql:dashboard/...exist, skipping:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+DROP VIEW
+CREATE VIEW
+CREATE VIEW
+CREATE VIEW
+COMMIT
+[exit 0] step 3 grant
+GRANT
+[exit 0] reader grants AFTER (vw_latest, zip_drop, pipeline_runs, history)
+true,true,true,true
+[exit 0] base tables still DENIED (least privilege intact)
+listings denied: true | listing_snapshots denied: true
+[exit 0] is_active population
+active=1019 inactive=0
+[exit 0] history view rows
+1093
+[exit 0] history sample newest 5
+zillow|30592297|2026-10-16|2399000
+zillow|30708532|2026-10-16|1690000
+zillow|112502180|2026-10-16|2495000
+zillow|30787931|2026-10-16|1479000
+zillow|30747909|2026-10-16|980000
+[exit 0] SHIPPED QUERY for zpid 2068139220 (oldest-first)
+
+[exit 0] cohorts AFTER (view rows / newest cohort)
+1019 / 1011
+[exit 1] act AS the reader (strongest test: SET ROLE)
+psql.exe : ERROR:  permission denied to set role "offmarket_reader"
+At line:17 char:9
++   $r = (& $psql -v ON_ERROR_STOP=1 -d $env:DATABASE_URL -At -c $sql 2 ...
++         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (ERROR:  permiss...fmarket_reader":String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+
+===== POST-APPLY VERIFICATION (appended 2026-10-16 19:55:45Z) =====
+SET ROLE offmarket_reader: NOT POSSIBLE as neondb_owner (ERROR: permission denied to set role). Used has_table_privilege() instead - authoritative for the privilege question.
+reader grants after re-grant: true,true,true,true (vw_latest_listings, vw_zip_price_drop_30d, pipeline_runs, vw_listing_history)
+base tables still denied for reader: listings=true(denied), listing_snapshots=true(denied)
+NOTE: the earlier 'SHIPPED QUERY for zpid 2068139220' returned no rows because that id does not exist in the dataset - it was a probe id, not a data id. Real ids look like 30592297.
+REAL shipped-query check follows.
+multi-snapshot listings (sparkline-capable): see count above
+production /api/listing/145558321 ->
+{"listing_id":"145558321","source":"zillow","history":[{"source":"zillow","listing_id":"145558321","snapshot_date":"2026-10-15","price":2099000,"previous_price":null,"price_reduced":false,"days_on_market":9,"price_per_sqft":620.82,"price_drop_pct":null,"motivation_score":"Low","motivation_reason":"DOM=9<=90 AND drop=null<=5","scraped_at":"2026-10-15 02:46:34+00"},{"source":"zillow","listing_id":"145558321","snapshot_date":"2026-10-16","price":2099000,"previous_price":null,"price_reduced":false,"days_on_market":10,"price_per_sqft":620.82,"price_drop_pct":null,"motivation_score":"Low","motivation_reason":"DOM=10<=90 AND drop=null<=5","scraped_at":"2026-10-16 05:55:18+00"}],"latest_snapshot_date":"2026-10-16","live":true}
+HTTP=200
+
+===== EVIDENCE CORRECTION (appended 2026-10-16 14:14:12 Z by the router) =====
+BUG IN THIS FILE - every "Z" timestamp written by PowerShell here is wrong by -06:00.
+Get-Date returns LOCAL time; .ToString('u') only appends a literal "Z". So a local
+stamp was mislabelled as UTC. Host offset: [System.TimeZoneInfo]::Local.BaseUtcOffset = 06:00:00.
+
+  header claims   : 2026-10-16 19:54:53Z
+  actual mtime UTC: 2026-10-16 13:55:45Z
+  TRUE apply time : ~13:55Z (NOT ~19:55Z)
+
+Independently confirmed: the validator re-derived this, and Postgres itself reports
+now() with TimeZone=GMT / utc_offset=00:00:00 (so the database is clean; only the
+PowerShell formatting was wrong).
+
+Docs corrected from "~19:55Z" to "~13:55Z": README.md, docs/roadmap.md,
+docs/apply_tier1_migration.md (status line + post-apply verification heading).
+
+Also note: this file is NOT tracked by git. The user's commit ca35432 added
+.gitignore:54  jobs/*/evidence/, so jobs evidence is now local-only. Only the
+two older files under jobs/tier1-ui-check/evidence/ remain tracked, because they
+were committed before that rule existed.

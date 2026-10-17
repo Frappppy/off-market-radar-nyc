@@ -5,22 +5,44 @@ import {
   ResponsiveContainer, Scatter, ScatterChart, Tooltip, XAxis, YAxis, ZAxis,
 } from "recharts";
 import IngestionHealth from "@/components/IngestionHealth";
+import FilterNotices from "@/components/FilterNotices";
+import HScroll from "@/components/HScroll";
 import ShareLink from "@/components/ShareLink";
 import { SCORE_COLORS, type Deal, type MotivationScore, type ZipTrend } from "@/lib/types";
 import { useFilters, toDealsQuery } from "@/lib/useFilters";
+import { useUrlSearchReady } from "@/lib/useUrlSearch";
 
 const LINE_COLORS = ["#d62728", "#60a5fa", "#34d399", "#a78bfa", "#fbbf24", "#f472b6"];
 const TICK = { fill: "#a1a1aa", fontSize: 12 };
 const TIP = { background: "#18181b", border: "1px solid #3f3f46", color: "#f4f4f5" };
 const GRID = "#3f3f46";
 
-function ChartCard({ title, caption, children, span = false }: {
-  title: string; caption: string; children: React.ReactNode; span?: boolean;
+// S4 — Recharts paints each legend label in the SERIES colour by default, so
+// the pie's "High" label rendered #d62728 on the #141416 panel = 3.66:1 (and
+// the line legend rendered several more below-AA inks). The coloured swatch
+// next to each label already carries the series colour, so the text itself can
+// use the body ink and clear AA without losing the association.
+const legendLabel = (value: string) => <span style={{ color: "#d4d4d8" }}>{value}</span>;
+
+// Gate fix (svg-img-alt) — recharts paints the pie's sectors and each scatter
+// symbol with an explicit `role="img"` and no accessible name, and wraps the
+// whole categorical chart in a focusable `<g role="img">`, so axe reported 78
+// unnamed image nodes on this page (serious). The data is not going on a
+// sighted-only diet: every chart now states the series it draws as text in an
+// `sr-only` paragraph (from `summary`), and the SVG itself is `aria-hidden`
+// because that text is its equivalent. The pie's own tabIndex is set to -1 so
+// hiding the chart cannot leave a focusable node inside an aria-hidden subtree
+// (which would replace one violation with `aria-hidden-focus`).
+function ChartCard({ title, caption, summary, children, span = false }: {
+  title: string; caption: string; summary: string; children: React.ReactNode; span?: boolean;
 }) {
   return (
     <section className={`panel p-4 ${span ? "md:col-span-2" : ""}`}>
       <h2 className="font-semibold text-zinc-100">{title}</h2>
-      <div style={{ height: 280 }}>{children}</div>
+      <p className="sr-only">{summary}</p>
+      <div style={{ height: 280 }} aria-hidden="true">
+        {children}
+      </div>
       <p className="mt-2 text-xs text-zinc-500">{caption}</p>
     </section>
   );
@@ -36,19 +58,52 @@ const median = (xs: number[]) => {
 const fmtUsd = (v: number | null) =>
   v == null ? "—" : `$${v >= 1_000_000 ? `${(v / 1_000_000).toFixed(2)}M` : `${Math.round(v / 1000)}k`}`;
 
+// Gate fix — text helpers for the sr-only equivalents of the charts. `pct`
+// accepts `unknown` because recharts rows are `Record<string, unknown>`.
+const pctText = (v: unknown) =>
+  typeof v === "number" && Number.isFinite(v) ? `${v.toFixed(1)}%` : "no data";
+const sentence = (label: string, items: string[]) =>
+  items.length === 0 ? `${label}: no data in the current filter.` : `${label}: ${items.join("; ")}.`;
+
 function TrendsInner() {
   const [filters] = useFilters();
   const [trends, setTrends] = useState<ZipTrend[]>([]);
   const [deals, setDeals] = useState<Deal[]>([]);
+  // Gate fix — see lib/useUrlSearch.ts. The store returns the SSR placeholder
+  // for the first render, so a filter-aware fetch must wait for `ready` or it
+  // races the reader's own query. This page had no staleness guard either, so
+  // the stale default-cohort response could win AND overwrite the answer.
+  const ready = useUrlSearchReady();
 
+  // /api/zips is filter-independent, so it does not wait on the store.
   useEffect(() => {
-    fetch("/api/zips").then((r) => r.json()).then((j) => setTrends(j.trends ?? [])).catch(() => setTrends([]));
-    fetch(`/api/deals?${toDealsQuery(filters, { limit: "500" })}`)
-      .then((r) => r.json()).then((j) => setDeals(j.deals ?? [])).catch(() => setDeals([]));
-  }, [filters]);
+    let dead = false;
+    fetch("/api/zips")
+      .then((r) => r.json())
+      .then((j) => {
+        if (!dead) setTrends(j.trends ?? []);
+      })
+      .catch(() => {
+        if (!dead) setTrends([]);
+      });
+    return () => {
+      dead = true;
+    };
+  }, []);
 
-  // How many daily snapshots exist — drives the honest caption below.
-  const snapshotCount = useMemo(() => new Set(trends.map((t) => t.snapshot_date)).size, [trends]);
+  // Gate fix — same `AbortController` guard Explorer.tsx and data/page.tsx
+  // already use, so a late response can never land on a newer query.
+  useEffect(() => {
+    if (!ready) return;
+    const ac = new AbortController();
+    fetch(`/api/deals?${toDealsQuery(filters, { limit: "500" })}`, { signal: ac.signal })
+      .then((r) => r.json())
+      .then((j) => setDeals(j.deals ?? []))
+      .catch(() => {
+        if (!ac.signal.aborted) setDeals([]);
+      });
+    return () => ac.abort();
+  }, [ready, filters]);
 
   const kpis = useMemo(() => {
     const prices = deals.map((d) => d.price).filter((v): v is number => v != null);
@@ -143,24 +198,32 @@ function TrendsInner() {
         <div className="min-w-0">
           <p className="eyebrow">Markets · Cross-section</p>
           <h1 className="mt-1 text-2xl font-bold tracking-tight text-zinc-50">Market trends</h1>
+          {/* F3 — this sentence used to branch on `snapshotCount`, which is 0
+              until /api/zips resolves. Two problems, one fix:
+              1. Correctness — the pre-data branch asserted "There is one
+                 snapshot date in this view so far" while the API had two.
+              2. CLS — the long branch made the h1 column 1138px of max-content
+                 instead of 624, which pushed the ShareLink onto a second flex
+                 line and grew the heading row (measured 179 -> 139 at 390,
+                 119 -> 77 at 1280), moving the KPI strip, health card and both
+                 charts 40-42px.
+              The wording is now fixed and makes no count claim: the number of
+              daily snapshots is already stated by the ingestion card below
+              ("History depth: N daily snapshots"), so the count is not lost.
+              Note: a fixed sentence also cannot change height at intermediate
+              (640-1024px) widths, which a reserved min-height could not cover. */}
           <p className="mt-1 text-sm text-zinc-400">
-            Reflects the current map filters.{" "}
-            {snapshotCount <= 1 ? (
-              <>
-                There is <strong className="font-medium text-zinc-300">one snapshot date</strong> in
-                this view so far, so each line below is a single point — a real series appears once
-                the daily job has run across multiple days.
-              </>
-            ) : (
-              <>
-                <strong className="font-medium text-zinc-300">{snapshotCount} snapshot dates</strong>{" "}
-                in this 30-day window — one point per ZIP per day.
-              </>
-            )}
+            Reflects the current map filters. Each line is one point per ZIP per
+            daily snapshot — how many daily loads have landed so far is in the
+            ingestion card below.
           </p>
         </div>
         <ShareLink className="ml-auto" />
       </div>
+
+      {/* S8 — /trends reads the same filter params as the map, so it has to say
+          the same thing when a link carried one we could not honour. */}
+      <FilterNotices value={filters} />
 
       <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-white/10 bg-white/10 md:grid-cols-4">
         {kpis.map(([label, value, note]) => (
@@ -177,14 +240,23 @@ function TrendsInner() {
       <IngestionHealth />
 
       <div className="grid gap-3 md:grid-cols-2">
-        <ChartCard title="Avg price drop % by ZIP — last 30 days" caption="One point per ZIP per daily load — a missing day is a missed ingest, detailed in the card above.">
+        <ChartCard
+          title="Avg price drop % by ZIP — last 30 days"
+          caption="One point per ZIP per daily load — a missing day is a missed ingest, detailed in the card above."
+          summary={sentence(
+            "Average price drop % by ZIP, latest daily snapshot",
+            lineData.length === 0
+              ? []
+              : topZips.map((z) => `${z} ${pctText(lineData[lineData.length - 1][z])}`)
+          )}
+        >
           <ResponsiveContainer>
             <LineChart data={lineData}>
               <CartesianGrid strokeDasharray="3 3" stroke={GRID} />
               <XAxis dataKey="date" tick={TICK} />
               <YAxis tick={TICK} />
               <Tooltip contentStyle={TIP} />
-              <Legend wrapperStyle={{ color: "#d4d4d8" }} />
+              <Legend wrapperStyle={{ color: "#d4d4d8" }} formatter={legendLabel} />
               {topZips.map((z, i) => (
                 <Line key={z} type="monotone" dataKey={z} dot={false} strokeWidth={2} stroke={LINE_COLORS[i % LINE_COLORS.length]} />
               ))}
@@ -192,7 +264,11 @@ function TrendsInner() {
           </ResponsiveContainer>
         </ChartCard>
 
-        <ChartCard title="High-motivation count by ZIP" caption="Where the call list concentrates — canvass these ZIPs first.">
+        <ChartCard
+          title="High-motivation count by ZIP"
+          caption="Where the call list concentrates — canvass these ZIPs first."
+          summary={sentence("High-motivation listings by ZIP", highByZip.map((r) => `${r.zip} ${r.High}`))}
+        >
           <ResponsiveContainer>
             <BarChart data={highByZip}>
               <CartesianGrid strokeDasharray="3 3" stroke={GRID} />
@@ -204,21 +280,39 @@ function TrendsInner() {
           </ResponsiveContainer>
         </ChartCard>
 
-        <ChartCard title="Motivation mix" caption="Share of High / Medium / Low in the current filter.">
+        <ChartCard
+          title="Motivation mix"
+          caption="Share of High / Medium / Low in the current filter."
+          summary={sentence(
+            "Motivation mix",
+            mix.map((m) => `${m.name} ${m.value} listings (${pctText(deals.length > 0 ? (m.value / deals.length) * 100 : null)})`)
+          )}
+        >
           <ResponsiveContainer>
             <PieChart>
-              <Pie data={mix} dataKey="value" nameKey="name" innerRadius="55%" outerRadius="85%" paddingAngle={2}>
+              {/* Gate fix (aria-hidden-focus) — recharts defaults `rootTabIndex`
+                  to 0, so the pie's root <g> stayed keyboard-focusable inside the
+                  `aria-hidden` wrapper above. That is `aria-hidden-focus`
+                  (serious) rather than the `svg-img-alt` it replaced, and it was
+                  also the page's one unnamed control. -1 makes it
+                  programmatically focusable but not tabbable; nothing is lost,
+                  because the sr-only summary is the chart's accessible form. */}
+              <Pie rootTabIndex={-1} data={mix} dataKey="value" nameKey="name" innerRadius="55%" outerRadius="85%" paddingAngle={2}>
                 {mix.map((m) => (
                   <Cell key={m.name} fill={SCORE_COLORS[m.name as MotivationScore]} />
                 ))}
               </Pie>
               <Tooltip contentStyle={TIP} />
-              <Legend wrapperStyle={{ color: "#d4d4d8" }} />
+              <Legend wrapperStyle={{ color: "#d4d4d8" }} formatter={legendLabel} />
             </PieChart>
           </ResponsiveContainer>
         </ChartCard>
 
-        <ChartCard title="DOM histogram" caption="Stale listings pile up past 90 days — that is the High-score pool.">
+        <ChartCard
+          title="DOM histogram"
+          caption="Stale listings pile up past 90 days — that is the High-score pool."
+          summary={sentence("Days on market histogram", domHist.map((b) => `${b.bucket} days: ${b.n} listings`))}
+        >
           <ResponsiveContainer>
             <BarChart data={domHist}>
               <CartesianGrid strokeDasharray="3 3" stroke={GRID} />
@@ -230,7 +324,11 @@ function TrendsInner() {
           </ResponsiveContainer>
         </ChartCard>
 
-        <ChartCard title="Price distribution" caption="Where filtered inventory sits — useful for picking a price band to farm.">
+        <ChartCard
+          title="Price distribution"
+          caption="Where filtered inventory sits — useful for picking a price band to farm."
+          summary={sentence("Price distribution", priceHist.map((b) => `${b.bucket}: ${b.n} listings`))}
+        >
           <ResponsiveContainer>
             <BarChart data={priceHist}>
               <CartesianGrid strokeDasharray="3 3" stroke={GRID} />
@@ -242,7 +340,14 @@ function TrendsInner() {
           </ResponsiveContainer>
         </ChartCard>
 
-        <ChartCard title="Avg $/sqft by property type" caption="Normalizes price across types — condos usually top the per-foot ranking.">
+        <ChartCard
+          title="Avg $/sqft by property type"
+          caption="Normalizes price across types — condos usually top the per-foot ranking."
+          summary={sentence(
+            "Average price per square foot by property type",
+            sqftByType.map((r) => `${r.type} ${r.avg} dollars per square foot`)
+          )}
+        >
           <ResponsiveContainer>
             <BarChart data={sqftByType} margin={{ bottom: 24 }}>
               <CartesianGrid strokeDasharray="3 3" stroke={GRID} />
@@ -254,7 +359,17 @@ function TrendsInner() {
           </ResponsiveContainer>
         </ChartCard>
 
-        <ChartCard span title="DOM vs price drop — every listing" caption="Top-right is the strike zone: stale AND cutting. Color = motivation score.">
+        <ChartCard
+          span
+          title="DOM vs price drop — every listing"
+          caption="Top-right is the strike zone: stale AND cutting. Color = motivation score."
+          summary={sentence(
+            "Days on market versus price drop, coloured by motivation score",
+            (["High", "Medium", "Low"] as MotivationScore[]).map(
+              (s) => `${s}: ${scatter.filter((p) => p.score === s).length} listings`
+            )
+          )}
+        >
           <ResponsiveContainer>
             <ScatterChart>
               <CartesianGrid strokeDasharray="3 3" stroke={GRID} />
@@ -275,33 +390,58 @@ function TrendsInner() {
       <section className="panel p-4">
         <h2 className="font-semibold text-zinc-100">Top High-motivation deals</h2>
         <p className="mt-1 text-xs text-zinc-500">Ranked by price-drop %. Same rows as the map — open one on Zillow to verify.</p>
-        <div className="mt-2 overflow-x-auto">
-          <table className="w-full text-sm text-zinc-200">
-            <thead>
-              <tr className="border-b border-zinc-800 text-left text-zinc-400">
-                {["address", "zip", "type", "price", "DOM", "drop %", "why", ""].map((h) => (
-                  <th key={h} className="px-2 py-1 font-medium">{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {topHigh.map((d) => (
-                <tr key={`${d.source}:${d.listing_id}`} className="border-b border-zinc-800 last:border-0 hover:bg-zinc-800/60">
-                  <td className="px-2 py-1">{d.address}</td>
-                  <td className="px-2 py-1">{d.zip}</td>
-                  <td className="px-2 py-1">{d.property_type}</td>
-                  <td className="px-2 py-1 tabular-nums">{d.price != null ? `$${d.price.toLocaleString()}` : "—"}</td>
-                  <td className="px-2 py-1 tabular-nums">{d.days_on_market ?? "—"}</td>
-                  <td className="px-2 py-1 tabular-nums">{d.price_drop_pct != null ? `${d.price_drop_pct.toFixed(1)}%` : "—"}</td>
-                  <td className="px-2 py-1 text-xs text-zinc-400">{d.motivation_reason}</td>
-                  <td className="px-2 py-1">{d.url && <a className="underline" href={d.url} target="_blank" rel="noreferrer">Zillow ↗</a>}</td>
+        {/* S10 — this table overflowed 20px at 390. The padding above brings it
+            inside the column, and HScroll keeps any future overflow disclosed
+            rather than clipped. */}
+        <div className="mt-2">
+          <HScroll
+            className="overflow-x-auto"
+            hint="Swipe the table sideways for the remaining columns →"
+          >
+            <table className="w-full text-sm text-zinc-200">
+              <thead>
+                <tr className="border-b border-zinc-800 text-left text-zinc-400">
+                  {["address", "zip", "type", "price", "DOM", "drop %", "why", ""].map((h) => (
+                    <th key={h} className="relative px-1.5 py-1 font-medium sm:px-2">
+                      {/* Gate fix (empty-table-header) — the link column has no
+                          visible label, and axe requires every `th` to have
+                          discernible text. An sr-only name satisfies that
+                          without changing the layout.
+                          `relative` on the cell is load-bearing, not decorative:
+                          `sr-only` is position:absolute, and without a
+                          positioned ancestor its containing block is the initial
+                          containing block, which sits OUTSIDE the `overflow-x-auto`
+                          wrapper — and a scroll container does not clip an
+                          absolutely positioned descendant whose containing block
+                          is outside it. Measured: the name escaped the clip, landed
+                          at the last column's offset and took the document from
+                          scrollWidth 390 to 491 at a 390px viewport (a 101px
+                          horizontal scroll on /trends). With the cell positioned,
+                          the span is clipped by HScroll as it should be. */}
+                      {h || <span className="sr-only">listing link</span>}
+                    </th>
+                  ))}
                 </tr>
-              ))}
-              {topHigh.length === 0 && (
-                <tr><td colSpan={8} className="px-2 py-4 text-center text-zinc-500">No High-motivation listings in the current filter.</td></tr>
-              )}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {topHigh.map((d) => (
+                  <tr key={`${d.source}:${d.listing_id}`} className="border-b border-zinc-800 last:border-0 hover:bg-zinc-800/60">
+                    <td className="px-1.5 py-1 sm:px-2">{d.address}</td>
+                    <td className="px-1.5 py-1 sm:px-2">{d.zip}</td>
+                    <td className="px-1.5 py-1 sm:px-2">{d.property_type}</td>
+                    <td className="px-1.5 py-1 tabular-nums sm:px-2">{d.price != null ? `$${d.price.toLocaleString()}` : "—"}</td>
+                    <td className="px-1.5 py-1 tabular-nums sm:px-2">{d.days_on_market ?? "—"}</td>
+                    <td className="px-1.5 py-1 tabular-nums sm:px-2">{d.price_drop_pct != null ? `${d.price_drop_pct.toFixed(1)}%` : "—"}</td>
+                    <td className="px-1.5 py-1 text-xs text-zinc-400 sm:px-2">{d.motivation_reason}</td>
+                    <td className="px-1.5 py-1 sm:px-2">{d.url && <a className="underline" href={d.url} target="_blank" rel="noreferrer">Zillow ↗</a>}</td>
+                  </tr>
+                ))}
+                {topHigh.length === 0 && (
+                  <tr><td colSpan={8} className="px-1.5 py-4 text-center text-zinc-500 sm:px-2">No High-motivation listings in the current filter.</td></tr>
+                )}
+              </tbody>
+            </table>
+          </HScroll>
         </div>
       </section>
     </div>

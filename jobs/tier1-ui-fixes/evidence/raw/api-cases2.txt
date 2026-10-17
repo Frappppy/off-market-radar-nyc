@@ -1,0 +1,43 @@
+﻿--- score=High,Medium&window_days=1
+   count: 157 | window_days: 1 | latest: 2026-10-16
+   byDate: {"2026-10-16":157}
+   byDate/score: {"2026-10-16/High":43,"2026-10-16/Medium":114}
+--- score=High,Medium&window_days=0
+   count: 157 | window_days: 0 | latest: 2026-10-16
+   byDate: {"2026-10-16":157}
+   byDate/score: {"2026-10-16/High":43,"2026-10-16/Medium":114}
+--- score=Low&window_days=1
+   count: 862 | window_days: 1 | latest: 2026-10-16
+   byDate: {"2026-10-16":854,"2026-10-15":8}
+   byDate/score: {"2026-10-16/Low":854,"2026-10-15/Low":8}
+--- score=Low&window_days=0
+   count: 854 | window_days: 0 | latest: 2026-10-16
+   byDate: {"2026-10-16":854}
+   byDate/score: {"2026-10-16/Low":854}
+--- score=High,Medium,Low&window_days=1
+   count: 1019 | window_days: 1 | latest: 2026-10-16
+   byDate: {"2026-10-16":1011,"2026-10-15":8}
+   byDate/score: {"2026-10-16/High":43,"2026-10-16/Medium":114,"2026-10-16/Low":854,"2026-10-15/Low":8}
+--- score=High,Medium,Low&window_days=0
+   count: 1011 | window_days: 0 | latest: 2026-10-16
+   byDate: {"2026-10-16":1011}
+   byDate/score: {"2026-10-16/High":43,"2026-10-16/Medium":114,"2026-10-16/Low":854}
+--- score=Bogus&window_days=0
+   count: 1011 | window_days: 0 | latest: 2026-10-16
+   byDate: {"2026-10-16":1011}
+   byDate/score: {"2026-10-16/High":43,"2026-10-16/Medium":114,"2026-10-16/Low":854}
+--- score=high&window_days=1
+   count: 1019 | window_days: 1 | latest: 2026-10-16
+   byDate: {"2026-10-16":1011,"2026-10-15":8}
+   byDate/score: {"2026-10-16/High":43,"2026-10-16/Medium":114,"2026-10-16/Low":854,"2026-10-15/Low":8}
+
+carried rows (older than newest), n=8
+   2026-10-15 Low 10306 604 LINCOLN AVE | dom 14 | drop null
+   2026-10-15 Low 11379 6483 83RD PLACE | dom 10 | drop null
+   2026-10-15 Low 10462 1934 BENEDICT AVENUE | dom 8 | drop null
+   2026-10-15 Low 10023 205 W END AVE APT 7F | dom 1 | drop null
+   2026-10-15 Low 11207 88 ABERDEEN ST | dom 1 | drop null
+   2026-10-15 Low 11414 159-30 102ND STREET | dom 0 | drop null
+   2026-10-15 Low 11422 13711 234TH ST | dom 0 | drop null
+   2026-10-15 Low 10312 123 JAMIE LN | dom 0 | drop null
+

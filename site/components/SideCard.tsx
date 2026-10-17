@@ -3,7 +3,10 @@ import { useEffect, useState } from "react";
 import PriceSparkline from "./PriceSparkline";
 import {
   SCORE_COLORS,
+  SCORE_PILL_TEXT,
   daysSince,
+  isCarriedOver,
+  lastSeenLabel,
   type Deal,
   type ListingHistoryPoint,
   type ListingHistoryResponse,
@@ -40,13 +43,22 @@ const money = (v: number) => `$${v.toLocaleString()}`;
 type Reduction = { date: string; from: number; to: number; abs: number; pct: number };
 
 // Every recorded reduction, newest first (roadmap 1.2).
-// Trigger: the day is marked `price_reduced`, OR its price is below the
-// comparison price. Either way the cut is only shown with arithmetic behind it —
-// a row flagged price_reduced but priced at or above its comparison price is
-// contradictory data, and inventing a "−$0" line would be worse than omitting it.
+// Trigger: the day's price is below the comparison price. The cut is only shown
+// with arithmetic behind it — a row flagged price_reduced but priced at or above
+// its comparison price is contradictory data, and inventing a "−$0" line would
+// be worse than omitting it. The flag itself is never read here, because the
+// arithmetic already implies it.
 // Comparison price: the day's own `previous_price` when the column carries it
 // (the scraper's record of what the price was), otherwise the nearest earlier
 // priced day in this same series (our own view of it). Recorded value wins.
+//
+// `previous_price` is a persistent column carried on every daily row, so the
+// recorded branch would otherwise re-emit the SAME cut once per snapshot day
+// (e.g. 315000→295000 on both 10-15 and 10-16 for a listing cut once). A cut is
+// only new on a day whose price differs from the previous day we saw — the day
+// the new price first appears — so an unchanged price cannot record it twice.
+// That keeps two genuinely distinct cuts (1049999→1049000, 1049000→999000)
+// apart while collapsing the carried-over duplicate.
 function reductionsFrom(points: ListingHistoryPoint[]): Reduction[] {
   const sorted = [...points].sort((a, b) =>
     a.snapshot_date < b.snapshot_date ? -1 : a.snapshot_date > b.snapshot_date ? 1 : 0
@@ -56,8 +68,9 @@ function reductionsFrom(points: ListingHistoryPoint[]): Reduction[] {
   for (const p of sorted) {
     const price = num(p.price);
     const recorded = num(p.previous_price);
+    const movedSincePrev = price != null && (prevSeriesPrice == null || price !== prevSeriesPrice);
     let from: number | null = null;
-    if (price != null && recorded != null && recorded > 0 && price < recorded) from = recorded;
+    if (movedSincePrev && price != null && recorded != null && recorded > 0 && price < recorded) from = recorded;
     else if (price != null && prevSeriesPrice != null && price < prevSeriesPrice) from = prevSeriesPrice;
     if (price != null && from != null) {
       out.push({
@@ -132,6 +145,22 @@ export default function SideCard({
     setSaved(deal ? isShortlisted(deal) : false);
   }, [deal]);
 
+  // Keyboard dismissal. The card is a role="dialog" that a keyboard user opens
+  // from a map pin (S1), and until now the only way out was to Tab to the Close
+  // button — Escape did nothing (measured). The listener is only registered
+  // while a card is mounted, and ignores modified chords so it cannot swallow
+  // Ctrl/Escape or Alt+Escape from the top layer. Clicking or tapping outside
+  // the map remains a mouse affordance only; Escape is the keyboard path.
+  useEffect(() => {
+    if (!deal) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey) return;
+      onClose();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [deal, onClose]);
+
   if (!deal) return null;
 
   const drop = deal.price_drop_pct != null ? `${deal.price_drop_pct.toFixed(1)}%` : "—";
@@ -145,16 +174,16 @@ export default function SideCard({
 
   // Reference date for freshness: the newest snapshot across the whole result
   // set when the caller has it (/api/deals), else this listing's own newest
-  // snapshot. Both are data, neither is the client clock.
+  // snapshot. Both are data, neither is the client clock — so the label is
+  // still correct when the page is cached or the machine clock is wrong.
   const latestRef = latestSnapshotDate ?? hist.latest;
   const age = daysSince(deal.snapshot_date, latestRef);
-  const lastSeen =
-    age == null
-      ? "last seen —"
-      : age <= 0
-        ? "last seen today"
-        : `last seen ${age} ${age === 1 ? "day" : "days"} ago`;
-  const stale = age != null && age >= 2;
+  const lastSeen = lastSeenLabel(age);
+  // age 0 = this row is in the newest daily run. age >= 1 = it was carried over
+  // by the recency window, i.e. it was NOT in the latest run at all — the
+  // distinction the old `age >= 2` threshold could never draw, because the
+  // default window pinned exactly the newest snapshot and every row scored 0.
+  const carriedOver = isCarriedOver(age);
 
   const firstPriced = priced[0] ? num(priced[0].price) : null;
   const lastPriced = priced[priced.length - 1] ? num(priced[priced.length - 1].price) : null;
@@ -178,7 +207,13 @@ export default function SideCard({
       </div>
 
       <div className="mt-1 flex flex-wrap gap-1 text-xs">
-        <span className="rounded px-1 text-white" style={{ background: SCORE_COLORS[deal.motivation_score] }}>
+        <span
+          className="rounded px-1"
+          style={{
+            background: SCORE_COLORS[deal.motivation_score],
+            color: SCORE_PILL_TEXT[deal.motivation_score],
+          }}
+        >
           {deal.motivation_score}
         </span>
         <span className="rounded bg-zinc-800 px-1 text-zinc-200">DOM {deal.days_on_market ?? "—"}</span>
@@ -217,7 +252,7 @@ export default function SideCard({
             {priced.length >= 2 && firstPriced != null && lastPriced != null && (
               <p className="mt-0.5 text-[11px] text-zinc-500 tabular-nums">
                 {money(firstPriced)} → {money(lastPriced)}{" "}
-                <span className="text-zinc-600">(oldest → newest snapshot)</span>
+                <span className="text-zinc-500">(oldest → newest snapshot)</span>
               </p>
             )}
 
@@ -264,15 +299,15 @@ export default function SideCard({
       </dl>
 
       <p
-        className={`mt-2 text-[11px] ${stale ? "text-amber-400" : "text-zinc-400"}`}
+        className={`mt-2 text-[11px] ${carriedOver ? "text-amber-400" : "text-zinc-400"}`}
         title={`snapshot ${deal.snapshot_date}`}
       >
         {lastSeen}
-        {stale && (
-          <span className="text-zinc-500">
+        {carriedOver && (
+          <>
             {" "}
             — snapshot {deal.snapshot_date}, not in the newest daily run
-          </span>
+          </>
         )}
       </p>
 

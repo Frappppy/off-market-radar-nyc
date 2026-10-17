@@ -143,31 +143,114 @@ city-agnostic (zip/lat-long drive the map).
 | 3. Store | ✅ live-PG unshimmed fix — `with conn.transaction()` per transaction, 31/31 live checks (`jobs/pg-fix-20261015-122253`) |
 | 4. Dashboard | ✅ sqlglot parse + DDL cross-check + DAX↔guide consistency (49 checks via `dashboard/verify_contract.py`) |
 
-### Website — Tier 1 of the roadmap: built and **deployed**
+### Website — Tier 1 of the roadmap: built, migrated, deployed, hardened
 
 The credibility tier (`docs/roadmap.md`) is implemented and live at
 <https://off-market-radar-nyc.vercel.app> (CLI deployment
-`dpl_815ySD5rr8nmBzteQERCFZx1SD7R`, 2026-10-16): stale listings dropped from the
-data surface (1,019 → 1,011 rows), a per-listing price-history panel, shareable
-filter links, and an ingestion health card that reports the run which produced
-the data. A mistyped `?min_dom=` no longer falls back to the frozen sample.
+`dpl_6KSEA2Lt2gqrNtg8RH83eBUofuUp`, 2026-10-16): stale listings no longer presented as
+current, a per-listing price-history panel, shareable filter links, and an ingestion
+health card that reports the run which produced the data. A mistyped `?min_dom=` no
+longer falls back to the frozen sample.
 
-- **Deploys are manual, and a `git push` does not deploy.** The Vercel project
-  has no Git integration — no repo webhook, no GitHub App, no deployments API
-  entries — so pushing to `main` changes the repo and nothing else. Ship with
-  `cd site && vercel --prod` (CLI authenticated as `frappppy`; `site/.vercel`
-  links project `off-market-radar-nyc`). `vercel project ls` / `vercel ls
-  off-market-radar-nyc --prod` show what is live.
-- **The SQL migration and the `vw_listing_history` grant are still unapplied**,
-  by design: the site does not depend on them, so the panel opens and reads
-  "price history unavailable — the history view is not granted yet" rather than
-  breaking the map. Apply order + the two hazards that make it matter:
+A second pass then closed twelve design-QA findings (S1–S12: contrast, tap targets,
+keyboard-reachable map pins, unnamed controls, clipped columns), fixed two bugs found
+afterwards — a price cut counted once per snapshot day, and `og:image` / `og:url` /
+`twitter:image` / `rel="canonical"` all absent — and removed a **site-wide layout-shift
+defect**: every route served a ~150-character `<main>` placeholder because the filter
+state used `useSearchParams()`, so the 465 px footer sat inside the first screen and
+jumped **0.558** when hydration filled the page in. All four routes still prerender
+(`○ Static`, zero bailout markers), and measured CLS is now under 0.1 in all twelve
+route × viewport cells, from up to 1.03. Fixes and numbers: `docs/roadmap.md`
+§ "Post-deploy hardening round".
+
+A third pass — the first run of **automated** gates — then refuted one of those claims: a
+`/trends` deep link rendered the *default* cohort (133 rows) instead of the linked one (43)
+in most runs, because the layout-shift fix's external store returns an empty string on its
+first render, so every filter-aware fetch ran once against the SSR default and raced the
+reader's real query — and `/trends` was the only one of the three pages without a staleness
+guard, so the stale response won. Fixed and re-proved with six consecutive loads per route:
+43 six times out of six, and exactly **one** `/api/deals` request per load, so the wasted
+request is gone rather than merely losing the race. The same pass found axe violations the
+manual rounds had missed — `/trends` `svg-img-alt` at **78 nodes**, an empty table header,
+an unnamed SVG control, and `/map` heading order — all now fixed, with every route ×
+viewport cell at 0 violations and the chart data still conveyed as `sr-only` text rather
+than hidden. `robots.txt` and `sitemap.xml` (both 404s) now exist, and each route has its
+own title and description. Detail and raw numbers:
+`jobs/tier1-gate-fixes/evidence/gate-fixes.md`.
+
+- **The SQL migration and the `vw_listing_history` grant are applied** (production
+  Neon, 2026-10-16 ~13:55Z), so the price-history panel reads real data:
+  `vw_listing_history` holds 1,093 rows, 74 listings carry a second snapshot, and
+  `/api/listing/145558321` returns `live:true` with a two-point series. Apply
+  order, post-apply figures, and the two hazards that make the order matter:
   `docs/apply_tier1_migration.md`
 - What was built, decided and left open: `docs/roadmap.md` § "Build status — Tier 1"
 - Prove the migration against a real local PostgreSQL before touching production:
   `scripts/tier1_migration_check.ps1` (apply order, idempotency, the upgrade guard,
   the grant hazard, the cold-start gate, the history view vs the shipped query)
 - Test count is now **142** (`pytest tests/ -q`); `dashboard/verify_contract.py` 54/54.
+
+#### Deploy mechanics
+
+A `git push` does not deploy yet. `vercel git connect` fails with `Failed to connect
+Frappppy/off-market-radar-nyc to project` while the repo is public
+(`gh repo view --json visibility` → `PUBLIC`), so the cause is the missing Vercel
+GitHub App rather than a private-repo access problem.
+
+**Do not use `hooks: []` as the test for this.** An earlier version of this section did,
+and it was wrong: a GitHub App integration delivers events through the App's own
+installation webhook, not through per-repo webhooks, so `gh api repos/…/hooks` can be
+`[]` while an App is installed. (This token cannot read installations to settle it —
+`/user/installations` returns 403, and `/repos/…/installation` requires App
+authentication.) The sound evidence is behavioural: **every deployment in this project is
+`Production`-scoped** — a connected Git integration also produces Preview deployments for
+branches — there are no GitHub deployment records, and `vercel git connect` fails. The
+only reliable confirmation is a push that produces a Preview deployment.
+
+The project's Root Directory was `.`, which was wrong: the Next.js app lives in
+`site/` and the repo root holds no `package.json`, so any Git-triggered build
+would have failed immediately. It is now `site` (`vercel project update
+--root-directory site` → `"changed": true`; `vercel project inspect` reports
+`Root Directory  site`).
+
+Until the Vercel GitHub App is installed on the repository, the only way to ship is
+the CLI — but that setting and the CLI interact, and the interaction has one sharp
+edge worth writing down. Vercel resolves `Root Directory` **relative to whatever
+directory is uploaded**, so running the CLI from inside `site/` makes it look for
+`site/site` and fail with `The specified Root Directory "site" does not exist`.
+Deploy from the **repo root** instead:
+
+```bash
+vercel deploy --prod --yes --project off-market-radar-nyc   # run from the repo root
+```
+
+Deploying this way uploads the repo root and then builds `site/`, which is exactly
+what a GitHub-triggered build does — so a successful CLI deploy from the root
+exercises the same path a future push will take, and the root directory setting is
+verified rather than assumed. That is how production is built today
+(`dpl_2RjajPjG5rtqENnnzjQEDPEwzjWe`, `READY`, aliased to
+`https://off-market-radar-nyc.vercel.app`).
+
+Two traps in that interaction, both hit and both worth knowing. A deploy with `--prod`
+is a **production** deployment, so if it fails, Vercel emails "production deployment
+failed" — the email above came from a 475 ms config rejection of a deploy attempted from
+the wrong directory, not from a broken push. And because the CLI stamps the local git
+branch, commit SHA and commit message onto whatever it uploads, such a failure is
+*dashboard-indistinguishable from a Git-triggered build*: it reads "on branch main at
+commit …". Check the deployment's `duration` (sub-second = config rejection) and whether
+any Preview deployments exist at all before believing a push caused it. To try a deploy
+without touching production or triggering that email, run `vercel deploy` without
+`--prod` — it produces a Preview URL.
+
+The remaining manual step is installing the Vercel GitHub App on
+`Frappppy/off-market-radar-nyc` and connecting the project. After that, a push to
+`main` builds from `site/` and deploys with no CLI step.
+
+**Order matters when you do that.** Connecting the repository can trigger a deploy of the
+newest commit, so connect only after the work you want live is committed *and* pushed —
+otherwise the connection rebuilds the previous commit over production, silently reverting
+it. And do not assume push-to-deploy works before the App is installed: a push that ships
+source without deploying looks identical from the outside.
 
 ### Live data reality — what the website actually shows
 

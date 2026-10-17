@@ -27,7 +27,12 @@ export interface DealQuery {
   type: string | null;
   limit: number; // map: 500 max; table: 25/page via offset
   offset: number;
-  windowDays?: number; // recency guard; 0 (default) = newest snapshot only
+  // Recency guard. ABSENT is no longer the same as 0: /api/deals defaults to 1
+  // (the newest snapshot plus the day before it) so listings carried over from
+  // the previous run stay visible and the "last seen" label can actually say
+  // something. windowDays: 0 means "newest snapshot only" — which makes every
+  // returned row tautologically current and the label inert.
+  windowDays?: number;
 }
 
 // Builds a parameterized SELECT over vw_latest_listings (dashboard/views.sql).
@@ -43,6 +48,13 @@ export interface DealQuery {
 // blank the map on the very first missed run; max(snapshot_date) keeps the map
 // showing the freshest thing we actually have. windowDays <= 0 pins exactly
 // that snapshot; windowDays >= 1 keeps it and the N days before it.
+//
+// The window is the caller's decision and /api/deals answers 1 when the param
+// is absent (see route.ts): a 1-day window returns the newest snapshot plus
+// anything carried over from the run before it, which is what makes a
+// listing's "last seen" age meaningful. `?? 0` below is therefore only the
+// defensive fallback for a caller that forgets to pass a number — it is not
+// the product default.
 export function buildDealsQuery(q: DealQuery): { text: string; params: unknown[] } {
   const params: unknown[] = [];
   const conds: string[] = [];
