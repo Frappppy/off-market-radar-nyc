@@ -107,7 +107,7 @@ Perf: cap map to latest snapshot only, paginate table, cluster pins client-side 
 
 | Piece | Free home | URL |
 |---|---|---|
-| Showcase + app | Vercel Hobby | `*.vercel.app`, auto-SSL — deploys by CLI from the repo root (`vercel deploy --prod --yes --project off-market-radar-nyc`); no Git integration, so a push does not deploy (README § Deploy mechanics) |
+| Showcase + app | Vercel Hobby | `*.vercel.app`, auto-SSL — deploys by CLI from the repo root (`vercel deploy --prod --yes --project off-market-radar-nyc`); ~~no Git integration, so a push does not deploy~~ (README § Deploy mechanics) |
 | Alt static | GitHub/Cloudflare Pages | `*.github.io` |
 | DB | Neon Free | (paused when idle — first query slow; note it on site) |
 | Robot | GitHub Actions Free | daily cron ~450 min/mo, safe |
@@ -133,7 +133,7 @@ Perf: cap map to latest snapshot only, paginate table, cluster pins client-side 
 
 ## 9. Verification story (client self-serve — "just give them a link")
 
-- Header freshness proves recency. Methodology proves method. CSV download proves data is real (spot-check 2–3 addresses on Zillow). Footer repo link → Actions runs (green checks, daily), `jobs/<run_id>/` manifests + process_log.md, 130 tests.
+- Header freshness proves recency. Methodology proves method. CSV download proves data is real (spot-check 2–3 addresses on Zillow). Footer repo link → Actions runs (green checks, daily), `jobs/<run_id>/` manifests + process_log.md, 142 tests.
 - Audiences: wholesaler (uses demo), hiring manager (reads case study + screenshots), engineer (audits repo: tests, contract, no secrets, idempotent SQL, pacing/robots).
 - Send message template: "Live demo tracking motivated sellers in NYC this week: [vercel link]. Drag DOM above 60, keep High only — pins are the call list. CSV export is the exact filtered view. Method + code: [repo link]. Refreshes daily; timestamp in header."
 

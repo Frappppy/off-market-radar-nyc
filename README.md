@@ -141,7 +141,7 @@ city-agnostic (zip/lat-long drive the map).
 | 1. Scrape | ✅ live-proxy runs — **1,011 records** (30 pages, 120/120 details) via CI run `20261016-055515`; earlier 82-record smoke run `jobs/smoke-scrape-20261015-084632` |
 | 2. Clean | ✅ full pytest suite green; end-to-end on fixture verified |
 | 3. Store | ✅ live-PG unshimmed fix — `with conn.transaction()` per transaction, 31/31 live checks (`jobs/pg-fix-20261015-122253`) |
-| 4. Dashboard | ✅ sqlglot parse + DDL cross-check + DAX↔guide consistency (49 checks via `dashboard/verify_contract.py`) |
+| 4. Dashboard | ✅ sqlglot parse + DDL cross-check + DAX↔guide consistency (54 checks via `dashboard/verify_contract.py`) |
 
 ### Website — Tier 1 of the roadmap: built, migrated, deployed, hardened
 
@@ -217,46 +217,60 @@ from the **API**, not the CLI — `vercel project inspect --json` omits `link` e
 will report an unconnected project that is in fact connected:
 
 ```bash
-GET /v9/projects/<projectId>?teamId=<teamId>    # -> link.type=github, link.repo=…, link.productionBranch=main
+GET /v9/projects/prj_lZtIBrfxq0TehcMulRyjF4ijQifY?teamId=team_WNXfrRLYe1daExSxWFgXIteV
+# -> link.type=github, link.repo=off-market-radar-nyc, link.productionBranch=main
 ```
 
 Current state: `link.type=github`, `link.org=Frappppy`, `link.repo=off-market-radar-nyc`,
-`link.productionBranch=main`, `rootDirectory=site`.
+`link.repoId=1421686985`, `link.productionBranch=main`, `link.deployHooks=0`,
+`rootDirectory=site`, `framework=nextjs`.
 
 Pushing `3495fea` (an empty commit, no file changes) produced
 `dpl_9wcKJJhChPefgAfgKrXYa4Xwt478` — `READY`, `target=production`, seven seconds later,
 with no CLI command run — and the production alias moved to it
-(`off-market-radar-nyc.vercel.app` → `off-market-radar-80u84hga7-…`). Branches build
-**Preview** deployments as well: a branch pushed with its own commit (`5acf286`,
-`3c0d9b5`) produced a `target=preview` deployment that reached `READY` in ~50 s.
+(`off-market-radar-nyc.vercel.app` → `off-market-radar-80u84hga7-…`). It was not a
+one-off: two later documentation pushes did the same (`cc67efa` →
+`dpl_W2PBmfwxHLaYdWE91D8w8YANrFbv`; `2537149` → alias `off-market-radar-lgu4qd0ll-…`).
+Branches build **Preview** deployments as well: a branch pushed with its own commit
+(`5acf286`, `3c0d9b5`) produced a `target=preview` deployment that reached `READY` in ~50 s.
 
 Two things about previews that are easy to get wrong. **They are not publicly
 reachable.** The project runs Vercel Authentication
-(`ssoProtection: {deploymentType: "all_except_custom_domains"}`), so in the same breath an
-anonymous fetch of a preview URL gets `302 → https://vercel.com/sso-api?url=…` while the
-production alias returns `200` — previews are for people signed in to the team, not links
-to hand a client. And **deleting a deployment mid-build is reported as a failed build**:
-cleaning up a preview while it was still `BUILDING` produced a "Preview deployment
-failed — Deployment not found. Was it deleted?" email, because Vercel recorded the
-cancellation as the build's outcome. Let a preview reach `READY` before removing it, or
-expect that email.
+(`ssoProtection: {deploymentType: "all_except_custom_domains"}`; `passwordProtection` is
+unset, `gitForkProtection` is `true`), so an anonymous fetch of a preview URL gets
+`302 → https://vercel.com/sso-api?url=…` while the production alias returns `200` in the
+same breath — previews are for people signed in to the team, not links to hand a client.
+And **deleting a deployment mid-build is reported as a failed build**: cleaning up a
+preview while it was still `BUILDING` produced a "Preview deployment failed — Deployment
+not found. Was it deleted?" email, because Vercel recorded the cancellation as the build's
+outcome. Let a preview reach `READY` before removing it, or expect that email.
 
 **How to tell a push-triggered build from a CLI one — `sha` and `branch` are not it.**
 An earlier version of this section claimed the two were *"dashboard-indistinguishable"*.
 They are not: the discriminator simply isn't where you would look. The CLI stamps the local
-git branch, SHA and message onto whatever it uploads, so `githubCommitSha`,
-`githubCommitRef`, `githubRepo`, `githubOrg` and `githubDeployment` are set on a **CLI**
-deploy too. What actually separates them:
+git branch, SHA and message onto whatever it uploads, so the **shared** keys —
+`githubCommitSha`, `githubCommitRef`, `githubCommitRepo`, `githubCommitOrg`, `githubOrg`,
+`githubRepo`, `githubDeployment`, `githubCommitMessage`, `githubCommitAuthorEmail`,
+`githubCommitAuthorName`, `lambdaRuntimeStats` — prove nothing either way. What actually
+separates them:
 
 | | push (App) | CLI (`vercel deploy`) |
 |---|---|---|
 | top-level `source` | `git` | `cli` |
-| `meta` keys present only here | `githubCommitVerification`, `githubHost`, `repoPushedAt`, `githubRepoVisibility`, `githubCommitAuthorLogin` | `actor`, `gitDirty`, `gitRootDirectory` |
+| `meta` keys present **only** here | `branchAlias`, `githubCommitAuthorLogin`, `githubCommitRepoId`, `githubCommitVerification`, `githubHost`, `githubRepoId`, `githubRepoOwnerType`, `githubRepoVisibility`, `repoPushedAt` | `actor`, `gitDirty`, `gitRootDirectory` |
+
+Observed on this project: the CLI deployment `dpl_FuzAiwPgnQTjorvhaRPVWgw4839f` carries
+`actor=opencode`, `gitDirty=1`, `gitRootDirectory=site`; the push-triggered
+`dpl_9wcKJJhChPefgAfgKrXYa4Xwt478` carries
+`branchAlias=off-market-radar-nyc-git-main-frappppy.vercel.app`, `githubHost=github.com`,
+`githubRepoVisibility=public`. `branchAlias` is the per-branch hostname a git deployment
+also gets; a CLI upload does not carry the key at all.
 
 **A preview is skipped for an already-built commit.** A branch pushed at a SHA that has
 already been deployed — e.g. a branch cut from the tip of `main` — produces **no**
-deployment, by design. If a preview looks missing, check the SHA before suspecting the
-integration, then give the branch its own commit and it builds.
+deployment, by design (observed: branch `pipeline-preview-test` at `3495fea`, nothing in
+3.5 minutes). If a preview looks missing, check the SHA before suspecting the integration,
+then give the branch its own commit and it builds.
 
 **Do not use `hooks: []` as the test for any of this.** It was used that way during the
 period described below, and it is wrong in both directions: a GitHub App integration

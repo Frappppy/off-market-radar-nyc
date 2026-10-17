@@ -127,6 +127,11 @@ day (~13:55Z) in the documented order: column → `dashboard/views.sql` → the
 four-object `GRANT`. Apply order, post-apply figures, and the two hazards that
 make the order matter: `docs/apply_tier1_migration.md`.
 
+**Deploy automation (2026-10-17).** A `git push` to `main` now deploys
+production automatically through the Vercel GitHub App, and branches build
+preview deployments gated by Vercel Authentication. Mechanics and evidence:
+`README.md` § Deploy mechanics.
+
 **1.1 — stale listings + freshness.** The bug fix is a recency guard in
 `site/lib/db.ts` that keeps only the newest snapshot cohort. Measured on
 production: **1,019 → 1,011 rows**, the 8-row difference being the listings whose
@@ -297,7 +302,7 @@ corrected two of its own**.
   wrapper — and a scroll container does not clip such a descendant. It escaped the clip
   and took `/trends` from `scrollWidth` 390 to **491** at 390 px (a 101 px horizontal
   scroll, and the likely cause of one flaky 0.153 CLS reading). Fixed with `relative` on
-  the cell and re-measured at 390. `job/tier1-gate-fixes/scripts/overflow-probe.js`
+  the cell and re-measured at 390. `jobs/tier1-gate-fixes/scripts/overflow-probe.js`
   exists so the next person can find this class of bug in one command.
 - **SEO gaps closed**: `robots.txt` and `sitemap.xml` were 404s, and all four routes
   shared one `<title>` and description. Both files now exist (no new dependency) and each

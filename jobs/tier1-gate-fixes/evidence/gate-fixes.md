@@ -315,10 +315,10 @@ cells**, `unnamedControls=0`, `emptyTh=0`, heading sequences sequential.
 **9.7 The push experiment.** Commit `de0f291` was pushed to
 `Frappppy/off-market-radar-nyc` while watching the deployment list: **no deployment was
 created** — the newest stayed `f1wxct749`, with `deployments: []` and `hooks: []` on the
-project and every historical deployment `Production`-scoped. Push-to-deploy is therefore
-provably still unwired, independently of the earlier `vercel git connect` failure. The
-outstanding step is the user's: install the Vercel GitHub App on the repo, and connect
-*after* pushing, since connecting can trigger a deploy of the newest commit.
+project and every historical deployment `Production`-scoped. ~~Push-to-deploy is therefore
+provably still unwired, independently of the earlier `vercel git connect` failure.~~
+~~The outstanding step is the user's: install the Vercel GitHub App on the repo, and
+connect *after* pushing, since connecting can trigger a deploy of the newest commit.~~
 
 **Correction (2026-10-17).** The verdict above is superseded; the observation is kept so
 the reversal is on the record. The App was installed on `Frappppy/off-market-radar-nyc`
@@ -327,9 +327,17 @@ and the project connected (`GET /v9/projects/prj_lZtIBrfxq0TehcMulRyjF4ijQifY` �
 now works: pushing empty commit `3495fea` to `main` (2026-10-17 08:14:39Z) created
 `dpl_9wcKJJhChPefgAfgKrXYa4Xwt478` at 08:14:46Z — `READY`, `target=production`,
 `source=git`, no CLI command run — and moved the production alias to
-`off-market-radar-80u84hga7-frappppy.vercel.app`; a throwaway branch at a new SHA
-(`f1fdea7`) likewise produced a Preview deployment `dpl_8xdcWxYpif62bycKyNKaoY24WhBz`
-(`target=preview`) within seconds. The discriminator that settles it is the top-level
+`off-market-radar-80u84hga7-frappppy.vercel.app`. Four branch experiments on 2026-10-17
+show what preview deployments actually do here:
+
+1. Branch `pipeline-preview-test` pushed at commit `3495fea` — the SHA was already deployed to production — produced **no deployment at all** over a ~3.5 minute watch. Vercel skips builds for an already-built SHA; this is by design, not a fault.
+2. Branch `preview-verify` at commit `f1fdea7` produced preview deployment `dpl_8xdcWxYpif62bycKyNKaoY24WhBz` (`target=preview`), first observed in state `BUILDING`. It was deleted while still building, and Vercel recorded that cancellation as a **failed build** — the source of the "Preview deployment failed — Deployment not found. Was it deleted?" email.
+3. Branch `preview-verify2` at commit `5acf286` produced `dpl_DrXEH2DNAmtjT3CBftNairSVfMd6`, reaching `READY` in about 50 seconds.
+4. Branch `preview-probe` at commit `3c0d9b5` produced a preview that reached `READY`; fetching its URL anonymously returned `302` to `https://vercel.com/sso-api?url=…` while the production alias returned `200` in the same check, which is how the preview authentication behaviour was established.
+
+All four SHAs are real commits in this repo's history (all four branches were deleted afterwards; the preview deployments were deleted after `READY`, so the deliberate deletions left no failed builds).
+
+The discriminator that settles it is the top-level
 `source` (`git` vs `cli`), not `hooks: []` — an App delivers events through its own
 installation webhook, so per-repo hooks stay empty while push-to-deploy is live.
 

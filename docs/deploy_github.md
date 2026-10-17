@@ -3,6 +3,10 @@
 The pipeline runs every day at **10:00 UTC** via `.github/workflows/daily_pipeline.yml`
 (plus manual runs through *Actions → daily_pipeline → Run workflow*).
 
+This document covers the daily **data pipeline** only; the website itself (`site/`)
+is a separate Vercel project that deploys automatically on a push to `main` (see
+`README.md` § Deploy mechanics).
+
 Secrets only ever live in GitHub's encrypted secret store / your gitignored local
 `config/*.local.env`. **They never go in any file in this repository** — no YAML
 values, no scripts, no docs.

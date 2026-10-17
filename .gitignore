@@ -51,6 +51,11 @@ jobs/*/cleaned-modified/
 *.tsbuildinfo
 site/tsconfig.tsbuildinfo
 site/next-env.d.ts
-jobs/*/evidence/
+# jobs/*/evidence/ holds screenshots and browser session state we never ship, but the
+# written reports (*.md) are the audit trail the README and roadmap cite. Ignore the
+# directory's contents except the markdown, so a new report is trackable by default
+# instead of silently ignored (before 2026-10-17 every such report needed `git add -f`).
+jobs/*/evidence/*
+!jobs/*/evidence/*.md
 *.log
 .DS_Store
