@@ -146,8 +146,8 @@ city-agnostic (zip/lat-long drive the map).
 ### Website — Tier 1 of the roadmap: built, migrated, deployed, hardened
 
 The credibility tier (`docs/roadmap.md`) is implemented and live at
-<https://off-market-radar-nyc.vercel.app> (CLI deployment
-`dpl_FuzAiwPgnQTjorvhaRPVWgw4839f`, 2026-10-17): stale listings no longer presented as
+<https://off-market-radar-nyc.vercel.app>, deployed automatically from `main` on every push
+(2026-10-17; see **Deploy mechanics** below): stale listings no longer presented as
 current, a per-listing price-history panel, shareable filter links, and an ingestion
 health card that reports the run which produced the data. A mistyped `?min_dom=` no
 longer falls back to the frozen sample.
@@ -211,29 +211,50 @@ the tracked/High/source detail. Detail: `jobs/tier1-gate-fixes/evidence/gate-fix
 
 #### Deploy mechanics
 
-A `git push` does not deploy yet. `vercel git connect` fails with `Failed to connect
-Frappppy/off-market-radar-nyc to project` while the repo is public
-(`gh repo view --json visibility` → `PUBLIC`), so the cause is the missing Vercel
-GitHub App rather than a private-repo access problem.
+**A `git push` to `main` deploys production.** The Vercel GitHub App is installed on
+`Frappppy/off-market-radar-nyc` and the project is connected to it. Read that connection
+from the **API**, not the CLI — `vercel project inspect --json` omits `link` entirely and
+will report an unconnected project that is in fact connected:
 
-**Do not use `hooks: []` as the test for this.** An earlier version of this section did,
-and it was wrong: a GitHub App integration delivers events through the App's own
-installation webhook, not through per-repo webhooks, so `gh api repos/…/hooks` can be
-`[]` while an App is installed. (This token cannot read installations to settle it —
-`/user/installations` returns 403, and `/repos/…/installation` requires App
-authentication.) The sound evidence is behavioural: **every deployment in this project is
-`Production`-scoped** — a connected Git integration also produces Preview deployments for
-branches — there are no GitHub deployment records, and `vercel git connect` fails. The
-only reliable confirmation is a push that produces a Preview deployment.
+```bash
+GET /v9/projects/<projectId>?teamId=<teamId>    # -> link.type=github, link.repo=…, link.productionBranch=main
+```
 
-**That test was run, and it confirms the integration is unwired.** Pushing `de0f291`
-(74 files) to `main` while watching the deployment list created **no deployment at
-all**: the newest stayed `f1wxct749`, the project reported `deployments: []` and
-`hooks: []`, and no GitHub deployment record appeared. So a push neither builds nor
-deploys today, and the cause is the missing App installation rather than the root
-directory or the repo's visibility — those were already fixed. The `hooks: []` reading
-is recorded above as *insufficient* evidence, not as the reason; the push is the reason
-it is now settled.
+Current state: `link.type=github`, `link.org=Frappppy`, `link.repo=off-market-radar-nyc`,
+`link.productionBranch=main`, `rootDirectory=site`.
+
+Pushing `3495fea` (an empty commit, no file changes) produced
+`dpl_9wcKJJhChPefgAfgKrXYa4Xwt478` — `READY`, `target=production`, seven seconds later,
+with no CLI command run — and the production alias moved to it
+(`off-market-radar-nyc.vercel.app` → `off-market-radar-80u84hga7-…`). Branches build
+**Preview** deployments as well: pushing `f1fdea7` on a throwaway branch created
+`dpl_8xdcWxYpif62bycKyNKaoY24WhBz` with `target=preview` within seconds (commit, branch
+and that preview deployment have since been removed).
+
+**How to tell a push-triggered build from a CLI one — `sha` and `branch` are not it.**
+An earlier version of this section claimed the two were *"dashboard-indistinguishable"*.
+They are not: the discriminator simply isn't where you would look. The CLI stamps the local
+git branch, SHA and message onto whatever it uploads, so `githubCommitSha`,
+`githubCommitRef`, `githubRepo`, `githubOrg` and `githubDeployment` are set on a **CLI**
+deploy too. What actually separates them:
+
+| | push (App) | CLI (`vercel deploy`) |
+|---|---|---|
+| top-level `source` | `git` | `cli` |
+| `meta` keys present only here | `githubCommitVerification`, `githubHost`, `repoPushedAt`, `githubRepoVisibility`, `githubCommitAuthorLogin` | `actor`, `gitDirty`, `gitRootDirectory` |
+
+**A preview is skipped for an already-built commit.** A branch pushed at a SHA that has
+already been deployed — e.g. a branch cut from the tip of `main` — produces **no**
+deployment, by design. If a preview looks missing, check the SHA before suspecting the
+integration, then give the branch its own commit and it builds.
+
+**Do not use `hooks: []` as the test for any of this.** It was used that way during the
+period described below, and it is wrong in both directions: a GitHub App integration
+delivers events through its own installation webhook, not through per-repo webhooks, so
+`gh api repos/…/hooks` can be `[]` while an App is installed. (This token cannot read
+installations to settle it — `/user/installations` returns 403 and
+`/repos/…/installation` requires App authentication.) The only reliable confirmation is a
+**push that produces a deployment**, which is what settled the question in both directions.
 
 The project's Root Directory was `.`, which was wrong: the Next.js app lives in
 `site/` and the repo root holds no `package.json`, so any Git-triggered build
@@ -241,9 +262,8 @@ would have failed immediately. It is now `site` (`vercel project update
 --root-directory site` → `"changed": true`; `vercel project inspect` reports
 `Root Directory  site`).
 
-Until the Vercel GitHub App is installed on the repository, the only way to ship is
-the CLI — but that setting and the CLI interact, and the interaction has one sharp
-edge worth writing down. Vercel resolves `Root Directory` **relative to whatever
+**The CLI remains the escape hatch**, and its interaction with `Root Directory` has one
+sharp edge worth writing down. Vercel resolves `Root Directory` **relative to whatever
 directory is uploaded**, so running the CLI from inside `site/` makes it look for
 `site/site` and fail with `The specified Root Directory "site" does not exist`.
 Deploy from the **repo root** instead:
@@ -252,37 +272,27 @@ Deploy from the **repo root** instead:
 vercel deploy --prod --yes --project off-market-radar-nyc   # run from the repo root
 ```
 
-Deploying this way uploads the repo root and then builds `site/`, which is exactly
-what a GitHub-triggered build does — so a successful CLI deploy from the root
-exercises the same path a future push will take, and the root directory setting is
-verified rather than assumed. That is how production is built today
-(`dpl_2RjajPjG5rtqENnnzjQEDPEwzjWe`, `READY`, aliased to
-`https://off-market-radar-nyc.vercel.app`).
+Two traps in that interaction, both hit and both still worth knowing. A deploy with
+`--prod` is a **production** deployment, so if it fails, Vercel emails "production
+deployment failed" — the email above came from a 475 ms config rejection of a deploy
+attempted from the wrong directory, not from a broken push. And because the CLI stamps
+the local git branch, commit SHA and commit message onto whatever it uploads, that failed
+deploy reads "on branch main at commit …" in the dashboard — which is exactly why the top
+level `source` field, not the SHA, is the thing to check (see the table above). Check
+`duration` as well: sub-second means a config rejection, not a build. To deploy without
+touching production or triggering that email, drop `--prod`.
 
-Two traps in that interaction, both hit and both worth knowing. A deploy with `--prod`
-is a **production** deployment, so if it fails, Vercel emails "production deployment
-failed" — the email above came from a 475 ms config rejection of a deploy attempted from
-the wrong directory, not from a broken push. And because the CLI stamps the local git
-branch, commit SHA and commit message onto whatever it uploads, such a failure is
-*dashboard-indistinguishable from a Git-triggered build*: it reads "on branch main at
-commit …". Check the deployment's `duration` (sub-second = config rejection) and whether
-any Preview deployments exist at all before believing a push caused it. To try a deploy
-without touching production or triggering that email, run `vercel deploy` without
-`--prod` — it produces a Preview URL.
-
-The remaining manual step is installing the Vercel GitHub App on
-`Frappppy/off-market-radar-nyc` and connecting the project. After that, a push to
-`main` builds from `site/` and deploys with no CLI step.
-
-**Connect only after the intended code is already pushed.** Connecting the project can
-itself trigger a build of the newest commit, so pushing first and connecting second
-avoids an accidental deploy of whatever happens to be at the tip.
-
-**Order matters when you do that.** Connecting the repository can trigger a deploy of the
-newest commit, so connect only after the work you want live is committed *and* pushed —
-otherwise the connection rebuilds the previous commit over production, silently reverting
-it. And do not assume push-to-deploy works before the App is installed: a push that ships
-source without deploying looks identical from the outside.
+**History — how this was unwired until 2026-10-17.** Pushing `de0f291` (74 files) to
+`main` while watching the deployment list created **no deployment at all**: the newest
+stayed `f1wxct749` and no GitHub deployment record appeared. `vercel git connect` failed
+with `Failed to connect Frappppy/off-market-radar-nyc to project` while the repo is public
+(`gh repo view --json visibility` → `PUBLIC`), which ruled out private-repo access and
+pointed at the missing App — the actual cause. Two ordering lessons from that period are
+still worth keeping if the connection is ever redone: **connect only after the intended
+code is already pushed**, because connecting can itself trigger a build of the newest
+commit and would rebuild the previous commit over production; and **do not assume
+push-to-deploy works before the App is installed**, because a push that ships source
+without deploying looks identical from the outside.
 
 ### Live data reality — what the website actually shows
 

@@ -113,6 +113,19 @@ Perf: cap map to latest snapshot only, paginate table, cluster pins client-side 
 | Robot | GitHub Actions Free | daily cron ~450 min/mo, safe |
 | Dashboard share | Power BI Publish-to-web (public demo only) | link, never for real client data |
 
+> **Correction (2026-10-17).** The "no Git integration, so a push does not deploy"
+> clause in the first row is superseded. The Vercel GitHub App is installed on
+> `Frappppy/off-market-radar-nyc` and the project is connected:
+> `GET /v9/projects/prj_lZtIBrfxq0TehcMulRyjF4ijQifY` returns `link.type=github`,
+> `link.org=Frappppy`, `link.repo=off-market-radar-nyc`, `link.productionBranch=main`,
+> `rootDirectory=site`. A `git push` to `main` therefore deploys production with no CLI
+> step: pushing empty commit `3495fea` (2026-10-17 08:14:39Z) created
+> `dpl_9wcKJJhChPefgAfgKrXYa4Xwt478` at 08:14:46Z — `READY`, `target=production`,
+> `source=git` (a CLI deploy reports `source=cli`) — and moved the production alias to
+> `off-market-radar-80u84hga7-frappppy.vercel.app`. The CLI command in the row still
+> works and is how the earlier deploys shipped; it is no longer the only route. Full
+> detail: README § Deploy mechanics.
+
 - No good free custom domains anymore (Freenom dead). Use `*.vercel.app` / `*.github.io` — trusted, professional for portfolio.
 - Later ($10–12/yr once): buy `yourname.dev/.me` on Cloudflare Registrar, point at Vercel in 3 clicks. Optional only.
 - Hobby catches: cold start 1–2s, 100 GB/mo bandwidth (app uses ~1–2), env vars in dashboard. Streamlit/Render sleep harder; Vercel + Cloudflare Pages don't.

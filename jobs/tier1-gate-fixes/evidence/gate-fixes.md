@@ -320,6 +320,19 @@ provably still unwired, independently of the earlier `vercel git connect` failur
 outstanding step is the user's: install the Vercel GitHub App on the repo, and connect
 *after* pushing, since connecting can trigger a deploy of the newest commit.
 
+**Correction (2026-10-17).** The verdict above is superseded; the observation is kept so
+the reversal is on the record. The App was installed on `Frappppy/off-market-radar-nyc`
+and the project connected (`GET /v9/projects/prj_lZtIBrfxq0TehcMulRyjF4ijQifY` →
+`link.type=github`, `link.productionBranch=main`, `rootDirectory=site`). Push-to-deploy
+now works: pushing empty commit `3495fea` to `main` (2026-10-17 08:14:39Z) created
+`dpl_9wcKJJhChPefgAfgKrXYa4Xwt478` at 08:14:46Z — `READY`, `target=production`,
+`source=git`, no CLI command run — and moved the production alias to
+`off-market-radar-80u84hga7-frappppy.vercel.app`; a throwaway branch at a new SHA
+(`f1fdea7`) likewise produced a Preview deployment `dpl_8xdcWxYpif62bycKyNKaoY24WhBz`
+(`target=preview`) within seconds. The discriminator that settles it is the top-level
+`source` (`git` vs `cli`), not `hooks: []` — an App delivers events through its own
+installation webhook, so per-repo hooks stay empty while push-to-deploy is live.
+
 ## 10. Residuals - not fixed, stated
 
 1. **Marker / counter paint latency** (§7): 2 of 27 sampled loads lagged the fetched cohort at the
@@ -430,4 +443,7 @@ because the KPI was sampled while still showing `…`; a solo re-run and the pro
 **11.9 Deploy.** `dpl_FuzAiwPgnQTjorvhaRPVWgw4839f`
 (`off-market-radar-8trkq9hql-frappppy.vercel.app` → alias `https://off-market-radar-nyc.vercel.app`),
 `vercel deploy --prod` from the repo root. Every number in §11.8's production column was measured
-against that deployment. Push-to-deploy remains unwired pending §9.7.
+against that deployment. ~~Push-to-deploy remains unwired pending §9.7.~~ **Correction (2026-10-17):
+push-to-deploy is wired now** — the App was installed and a push to `main` (`3495fea`) created
+`dpl_9wcKJJhChPefgAfgKrXYa4Xwt478` (`source=git`, `target=production`) with no CLI command. See
+§9.7, Correction.
