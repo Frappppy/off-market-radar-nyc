@@ -1,11 +1,20 @@
-# Daily pipeline: scrape -> clean -> store (UTC 10:00).
-#
-# Secrets are referenced ONLY through GitHub's encrypted secrets context below —
-# never hard-coded, never written to any file. See docs/deploy_github.md for setup.
-#
-# Note: the run steps use the venv interpreter explicitly. `py -3` would resolve
-# to the runner's base Python (verified: py ignores VIRTUAL_ENV) and would miss
-# the packages installed into .venv.
+# WHAT:      Daily pipeline workflow — scrape -> clean -> store at 10:00 UTC
+#            (cron "0 10 * * *"), plus manual workflow_dispatch, on windows-latest.
+# WHY:       The scheduled run that keeps the site fed. It holds the only
+#            production credentials in the repo, and those are referenced ONLY
+#            through GitHub's encrypted secrets context below — never
+#            hard-coded, never written to any file.
+#            Verified by: test_only_the_six_secrets_referenced + test_no_leaked_values
+#            (tests/test_workflow_yaml.py).
+#            The run steps use the venv interpreter explicitly: `py -3` would
+#            resolve to the runner's base Python (verified: py ignores
+#            VIRTUAL_ENV) and would miss the packages installed into .venv.
+#            Verified by: test_schedule_and_stages (pins the venv invocations).
+#            Setup: docs/deploy_github.md.
+# INPUTS:    6 GitHub Actions secrets (DATABASE_URL + the DATAIMPULSE_* five),
+#            a checkout of this repo, requirements.txt.
+# OUTPUTS:   one pipeline run per trigger; any failed stage fails the job.
+# CALLERS:   the GitHub scheduler; humans via workflow_dispatch.
 
 name: daily_pipeline
 

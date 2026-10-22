@@ -1,17 +1,22 @@
 -- =============================================================================
--- Project 1: The Off-Market Real Estate Deal Finder
--- Stage 4 (visualize / Power BI) -- dashboard views.
---
--- Owner: dashboard stage. Apply AFTER the Stage 3 tables exist
--- (sql/schema.sql per docs/data_contract.md). Safe to re-run (idempotent).
---
--- How to apply:
---   psql "$DATABASE_URL" -f dashboard/views.sql
---   ...or paste this whole file into the Neon console SQL editor and Run.
---
--- Idempotency note: PostgreSQL has NO "CREATE VIEW IF NOT EXISTS", so the
--- portable pattern is DROP VIEW IF EXISTS ... CASCADE + CREATE OR REPLACE VIEW.
--- Both statements run inside a transaction so a failure rolls the file back.
+-- WHAT:      Stage 4 (visualize / Power BI) dashboard views —
+--            vw_latest_listings, vw_listing_history, vw_zip_price_drop_30d.
+-- WHY:       The single read surface for the Power BI layer AND the site's
+--            per-listing history endpoint (owner: dashboard stage). Idempotent
+--            by design: PostgreSQL has NO "CREATE VIEW IF NOT EXISTS", so the
+--            portable pattern is DROP VIEW IF EXISTS ... CASCADE + CREATE OR
+--            REPLACE VIEW, all inside BEGIN/COMMIT so a failure rolls the
+--            whole file back.
+-- INPUTS:    Stage 3 tables from sql/schema.sql — apply that first, per
+--            docs/data_contract.md.
+-- OUTPUTS:   the three views on the target Postgres (Neon); safe to re-run.
+-- CALLERS:   dashboard/verify_contract.py (parses and checks every reference),
+--            Power BI, scripts/tier1_migration_check.py (checks A/B/F).
+--            Apply: psql "$DATABASE_URL" -f dashboard/views.sql
+--            ...or paste this whole file into the Neon console SQL editor.
+-- TESTED BY: tests/test_schema_sqlglot.py
+--            (test_views_expose_is_active_and_listing_history) +
+--            dashboard/verify_contract.py CHECK 2 (reference parity).
 -- =============================================================================
 
 BEGIN;
@@ -26,6 +31,8 @@ DROP VIEW IF EXISTS vw_listing_history CASCADE;
 -- Drives the Power BI map, KPI cards and the detail table.
 -- INNER JOIN is deliberate: a listing with no snapshot yet has no price /
 -- motivation data and must not appear on the dashboard.
+-- Verified by: NOTHING (gap — no test pins the join type; verify_contract.py
+-- CHECK 2 only proves the referenced columns exist).
 -- -----------------------------------------------------------------------------
 CREATE OR REPLACE VIEW vw_latest_listings AS
 SELECT
@@ -49,6 +56,7 @@ SELECT
     -- listing missed N consecutive successful runs (sold / delisted); the site
     -- filters on it. last_seen_at drives the "last seen N days ago" display.
     -- Appended after the existing columns so Power BI column order is preserved.
+    -- Verified by: scripts/tier1_migration_check.py check B6.
     l.is_active,
     l.last_seen_at
 FROM listings AS l

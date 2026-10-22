@@ -1,13 +1,17 @@
 #!/usr/bin/env python3
-"""Daily pipeline orchestrator — Stage 1 scrape -> Stage 2 clean -> Stage 3 store.
-
-    py -3 scripts/run_daily.py [--skip-scrape] [--pages 30] [--max-details 120] [--delay 5]
-
-- run_id = UTC timestamp YYYYMMDD-HHMMSS; data + run_log.md land in jobs/<run_id>/.
-- config/*.local.env (gitignored) are loaded into the environment first and never
-  override variables already set (CI secrets win).
-- Every stage runs with THIS interpreter (sys.executable) via subprocess; a failing
-  stage skips the remaining stages and the script exits non-zero.
+"""WHAT:      Daily pipeline orchestrator — Stage 1 scrape -> Stage 2 clean ->
+           Stage 3 store for one UTC run_id; data + run_log.md land in
+           jobs/<run_id>/.
+WHY:       The single entry point CI and humans use for a daily run: every
+           stage runs as a subprocess of THIS interpreter (sys.executable), a
+           failing stage skips the remaining stages, and the script exits
+           non-zero. Usage: scripts/run_daily.py [--skip-scrape] [--pages 30]
+           [--max-details 120] [--delay 5].
+INPUTS:    CLI flags; gitignored config/*.local.env files are loaded first and
+           never override variables already set (CI secrets win).
+OUTPUTS:   jobs/<run_id>/{raw,cleaned,store} + run_log.md; exit 0 = all stages ok.
+CALLERS:   .github/workflows/daily_pipeline.yml; run by hand (README).
+TESTED BY: tests/test_run_daily.py — stage commands, skip logic, env policy.
 """
 
 from __future__ import annotations
@@ -35,6 +39,8 @@ ROOT = Path(__file__).resolve().parents[1]
 #: carries days-on-market from its search card, which is enough for Medium.
 #: Pacing is 5s between ALL requests: 2.5x the contractual 2s floor (which stays
 #: the hard floor in src/scrape/cli.py). Rationale: docs/robots_precheck.md.
+#: Verified by: test_daily_volume_policy_is_what_the_docs_claim (+
+#: test_build_stages_matches_contract for the exact commands).
 DAILY_PAGES = 30
 DAILY_MAX_DETAILS = 120
 DAILY_DELAY = 5.0
@@ -83,6 +89,8 @@ class Stage:
     name: str
     cmd: list[str]
     skip_reason: str | None = None  # intentional skip (--skip-scrape)
+    # (an intentional skip is not a failure) Verified by:
+    # test_run_pipeline_intentional_skip_is_not_failure.
 
 
 def build_stages(

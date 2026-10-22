@@ -1,40 +1,28 @@
 #!/usr/bin/env python
-"""Tier 1 migration verification - executed against a real PostgreSQL.
-
-Run this through scripts/tier1_migration_check.ps1, which boots an ephemeral
-local cluster (initdb -A trust, 127.0.0.1 only) and passes DATABASE_URL here.
-It creates and drops only its own `tier1_*` databases. It never contacts
-production and needs no credentials.
-
-Why it exists: docs/apply_tier1_migration.md tells the owner to run SQL against
-the production branch in a specific order, and the backend validation gate could
-only *infer* the consequences (no local psql, so no DDL outcome was observed).
-Every claim below is executed rather than reasoned about:
-
-  A  apply order       views.sql BEFORE the migration fails, names is_active, and
-                       rolls back; migration then views succeeds.
-  B  idempotency       every file re-applies cleanly and no view loses a column.
-  C  upgrade guard     a database created before is_active existed REJECTS the
-                       loader's real upsert (42703) until sql/schema.sql's
-                       idempotent ALTER repairs it - then the upsert works. This
-                       is the pipeline-breaking sequencing hazard.
-  D  grant hazard H1   re-applying views.sql destroys the reader's SELECT on the
-                       two views it DROPs, spares pipeline_runs, and the
-                       runbook's four-object re-grant restores every read.
-  E  cold-start gate   the real mark_stale_listings() is a true no-op below
-                       STALE_RUNS successful runs, then deactivates exactly the
-                       listings that missed all N, is idempotent, and reactivates
-                       a listing that returns.
-  F  1.2 view + query  vw_listing_history exposes exactly the column set the
-                       shipped LISTING_HISTORY_QUERY selects - extracted from
-                       site/lib/db.ts, not paraphrased - and that query runs and
-                       returns history oldest-first.
-  G  1.1 recency guard `snapshot_date = max(snapshot_date)` excludes a listing
-                       whose newest snapshot is older, and survives a missed run
-                       (it can never empty the map, unlike CURRENT_DATE).
-
-Exit code: 0 = every assertion passed, 1 = at least one failed.
+"""WHAT:      Tier-1 migration verification executed against a real, ephemeral
+           PostgreSQL — checks A-G: A apply order, B idempotency, C upgrade
+           guard (the pipeline-breaking hazard), D grant hazard H1, E
+           cold-start stale gate, F vw_listing_history + the shipped
+           LISTING_HISTORY_QUERY, G the 1.1 recency guard.
+WHY:       docs/apply_tier1_migration.md tells the owner to run SQL against
+           production in a specific order, but nothing had OBSERVED the DDL
+           outcome; every claim below is executed, not reasoned about. Run it
+           through scripts/tier1_migration_check.ps1, which boots an ephemeral
+           local cluster (initdb -A trust, 127.0.0.1 only) and passes
+           DATABASE_URL. It creates and drops only its own `tier1_*` databases,
+           never contacts production, and needs no credentials.
+INPUTS:    DATABASE_URL env (ephemeral admin DSN); sql/schema.sql,
+           sql/migrations/2026-10-16_tier1_is_active.sql, dashboard/views.sql,
+           sql/vercel_readonly_role.sql, site/lib/db/queries.ts; the shipped
+           code path src.store.{db,mapping}.
+OUTPUTS:   PASS/FAIL line per check + a SUMMARY; exit 0 = every assertion
+           passed, 1 = at least one failed.
+CALLERS:   scripts/tier1_migration_check.ps1 (Windows-only bootstrapper).
+TESTED BY: none (needs a live PostgreSQL) — the printed A0-G4 checks ARE the
+           verification; the SQL text is also pinned by
+           tests/test_schema_sqlglot.py and tests/test_store_stale.py.
 """
+# D1 exemption (user call, 2026-10-22, REFACTOR_PLAN.md §4): kept whole at 459 ln — splitting this repo-only real-DB verification (unrunnable here: no Windows/Postgres) would trade a known size for an unverifiable refactor; rationale in docs/decisions.md §10.
 
 from __future__ import annotations
 
@@ -63,7 +51,7 @@ SCHEMA = REPO / "sql" / "schema.sql"
 MIGRATION = REPO / "sql" / "migrations" / "2026-10-16_tier1_is_active.sql"
 VIEWS = REPO / "dashboard" / "views.sql"
 ROLE_SQL = REPO / "sql" / "vercel_readonly_role.sql"
-DB_TS = REPO / "site" / "lib" / "db.ts"
+DB_TS = REPO / "site" / "lib" / "db" / "queries.ts"  # moved out of lib/db.ts by the Phase 3 split
 
 DB_ORDER = "tier1_order"
 DB_UPGRADE = "tier1_upgrade"
@@ -95,9 +83,7 @@ def section(title: str) -> None:
     print(f"\n== {title} ==")
 
 
-# --------------------------------------------------------------------------
-# connection / DDL helpers
-# --------------------------------------------------------------------------
+# --- connection / DDL helpers ---
 def dsn_for(database: str) -> str:
     u = urlsplit(ADMIN_DSN)
     return urlunsplit((u.scheme, u.netloc, "/" + database, u.query, u.fragment))
@@ -193,9 +179,7 @@ def upsert_listing(database: str, listing_id: str, **over) -> None:
         conn.commit()
 
 
-# --------------------------------------------------------------------------
-# A / B - apply order and idempotency (on a pre-Tier-1 database)
-# --------------------------------------------------------------------------
+# --- A / B - apply order and idempotency (on a pre-Tier-1 database) ---
 section("A. apply order - views.sql before the migration must fail")
 fresh_db(DB_ORDER)
 head = head_schema_text()
@@ -239,9 +223,7 @@ check(
     str(columns(DB_ORDER, "vw_latest_listings")[-2:]),
 )
 
-# --------------------------------------------------------------------------
-# C - the is_active upgrade guard (the pipeline-breaking hazard)
-# --------------------------------------------------------------------------
+# --- C - the is_active upgrade guard (the pipeline-breaking hazard) ---
 section("C. upgrade guard - a pre-Tier-1 database rejects the loader's upsert until repaired")
 fresh_db(DB_UPGRADE)
 ok, err = apply_sql(DB_UPGRADE, head)
@@ -273,9 +255,7 @@ upsert_listing(DB_UPGRADE, "C1", address="999 UPDATED AVE")
 check(scalar(DB_UPGRADE, "SELECT address FROM listings WHERE listing_id='C1'") == "999 UPDATED AVE", "C10 a re-upsert takes the ON CONFLICT DO UPDATE branch", "999 UPDATED AVE", str(scalar(DB_UPGRADE, "SELECT address FROM listings WHERE listing_id='C1'")))
 check(scalar(DB_UPGRADE, "SELECT is_active FROM listings WHERE listing_id='C1'") is True, "C11 ...and still sets is_active = true", "True", str(scalar(DB_UPGRADE, "SELECT is_active FROM listings WHERE listing_id='C1'")))
 
-# --------------------------------------------------------------------------
-# D - the grant hazard (H1) and the runbook's fix
-# --------------------------------------------------------------------------
+# --- D - the grant hazard (H1) and the runbook's fix ---
 section("D. grant hazard H1 - re-applying views.sql destroys the reader's SELECT")
 role = f"tier1_reader_{os.getpid()}"
 with psycopg.connect(dsn_for(DB_ORDER), autocommit=True) as conn:
@@ -329,9 +309,7 @@ try:  # cleanup is best-effort: never let it hide a real assertion result
 except psycopg.Error as exc:
     print(f"  note  could not drop role {role}: {str(exc).splitlines()[0].strip()}")
 
-# --------------------------------------------------------------------------
-# E / F / G - stale marking, price history, recency guard
-# --------------------------------------------------------------------------
+# --- E / F / G - stale marking, price history, recency guard ---
 section("E. cold-start gate - the real mark_stale_listings() below STALE_RUNS successful runs")
 fresh_db(DB_STALE)
 ok, err = apply_file(DB_STALE, SCHEMA)
@@ -397,13 +375,13 @@ for label, run in (
         f"{changed} changed / {active_count()} active",
     )
 
-add_run(*RUNS[2])  # r2 closes the 3-run window: cut-off = r2.started_at = T-3d
+add_run(*RUNS[2])  # r2 closes the 3-run window: cut-off = r2.started_at = T-3d. Verified by: checks E4/E5 (this script).
 n = mark()
 check(n == 2, "E4 3 successful runs: exactly the two listings that missed all three are deactivated", "2", str(n))
 check(inactive() == ["L_dead", "L_gone"], "E5 ...and they are the right ones (L_recent missed 2, so it stays)", "['L_dead', 'L_gone']", str(inactive()))
 check(mark() == 0, "E6 re-running is idempotent", "0", str(mark()))
 
-add_run(*RUNS[3])  # an older 4th run must not change the window
+add_run(*RUNS[3])  # an older 4th run must not change the window. Verified by: check E7 (this script).
 check(mark() == 0, "E7 an older 4th run does not change the outcome (window = the newest N)", "0", str(mark()))
 
 upsert_listing(DB_STALE, "L_gone", address="1 BACK ON MARKET BLVD")
@@ -426,7 +404,7 @@ check(columns(DB_STALE, "vw_listing_history") == HISTORY_COLUMNS, "F1 vw_listing
 
 ts = DB_TS.read_text(encoding="utf-8")
 m = re.search(r"export const LISTING_HISTORY_QUERY = `(.*?)`;", ts, re.S)
-check(m is not None, "F2 LISTING_HISTORY_QUERY found in site/lib/db.ts", "match", "not found")
+check(m is not None, "F2 LISTING_HISTORY_QUERY found in site/lib/db/queries.ts", "match", "not found")
 history_sql, names, rows = "", [], []
 if m:
     history_sql = m.group(1).replace("$1", "'zillow'").replace("$2", "'L_new'")
@@ -439,7 +417,7 @@ if m:
     except psycopg.Error as exc:
         names = [f"ERROR: {str(exc).splitlines()[0].strip()}"]
 check(rows and len(rows) == 3, "F3 the shipped query returns the full 3-row history", "3 rows", f"{len(rows)} rows")
-check(names == HISTORY_COLUMNS, "F4 its result columns match the SELECT list / lib/types.ts exactly", str(HISTORY_COLUMNS), str(names))
+check(names == HISTORY_COLUMNS, "F4 its result columns match the SELECT list / lib/api-types.ts exactly", str(HISTORY_COLUMNS), str(names))
 if rows:
     dates = [r[names.index("snapshot_date")] for r in rows]
     check(dates == sorted(dates), "F5 history comes back oldest-first (the sparkline needs no re-sort)", "ascending", str(dates))
@@ -477,7 +455,6 @@ with psycopg.connect(dsn_for(DB_STALE), autocommit=True) as conn:
 cohort_after = int(scalar(DB_STALE, f"SELECT count(*) FROM vw_latest_listings WHERE snapshot_date = {NEWEST}"))
 check(cohort_after > 0, "G4 after a MISSED run the guard still returns the newest available cohort, never an empty map", "> 0", str(cohort_after))
 
-# --------------------------------------------------------------------------
 print(f"\n== SUMMARY ==\npassed: {passes}   failed: {failures}   total: {passes + failures}")
 print("RESULT: " + ("ALL CHECKS PASSED" if failures == 0 else f"{failures} CHECK(S) FAILED"))
 raise SystemExit(0 if failures == 0 else 1)

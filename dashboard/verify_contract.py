@@ -1,19 +1,19 @@
 #!/usr/bin/env python
-"""Stage 4 verification — run from inside the project folder:
-
-    ..\\.venv\\Scripts\\python.exe dashboard\\verify_contract.py
-
-Checks (all must pass; exit code 0 = pass):
-  1. sqlglot.parse(views.sql, dialect="postgres") succeeds.
-  2. Every table/column referenced in dashboard/views.sql exists in the
-     Stage 3 DDL in docs/data_contract.md (per-reference PASS/FAIL), plus a
-     sqlglot qualify() gate against that schema.
-  3. Measure cross-check, both directions:
-       - every measure named in build_guide.md (bracketed form) exists in
-         dax_measures.dax, and every measure in dax_measures.dax is named in
-         build_guide.md;
-       - every column referenced in dax_measures.dax exists in the view that
-         the DAX names it on.
+"""WHAT:      Stage-4 contract verification — CHECK 1: sqlglot parses
+           dashboard/views.sql as Postgres; CHECK 2: every table/column
+           referenced by the views exists in the docs/data_contract.md DDL
+           (per-reference records + a sqlglot qualify() gate); CHECK 3:
+           build_guide.md <-> dax_measures.dax <-> views.sql cross-check
+           (every bracketed guide reference is a measure or view column, every
+           measure is referenced in the guide, every DAX 'view'[column] exists).
+WHY:       The Power BI layer reads hand-written SQL/DAX that no pytest covers;
+           this script is the 54-assertion gate that must pass 54/54 (exit 0)
+           before those artefacts are trusted. Run: dashboard/verify_contract.py.
+INPUTS:    dashboard/views.sql, dashboard/dax_measures.dax,
+           dashboard/build_guide.md, docs/data_contract.md.
+OUTPUTS:   per-check PASS/FAIL records + SUMMARY; exit 0 = all passed, else 1.
+CALLERS:   humans / agents before shipping dashboard or SQL changes.
+TESTED BY: none (not pytest) — the script's own CHECK 1/2/3 records are the gate.
 """
 
 import re
@@ -42,9 +42,7 @@ def record(check_id, ok, message):
     print(f"[{check_id}] {'PASS' if ok else 'FAIL'} — {message}")
 
 
-# ---------------------------------------------------------------------------
-# CHECK 1 — sqlglot parses views.sql as Postgres
-# ---------------------------------------------------------------------------
+# --- CHECK 1: sqlglot parses views.sql as Postgres ---
 print("== CHECK 1: sqlglot parse (dialect='postgres') ==")
 views_sql = VIEWS_SQL.read_text(encoding="utf-8")
 try:
@@ -56,9 +54,7 @@ except sqlglot.errors.SqlglotError as exc:
     print("\nRESULT: FAIL")
     sys.exit(1)
 
-# ---------------------------------------------------------------------------
-# Build the contract schema from docs/data_contract.md (Stage 3 DDL)
-# ---------------------------------------------------------------------------
+# --- build the contract schema from docs/data_contract.md (Stage 3 DDL) ---
 contract_text = CONTRACT.read_text(encoding="utf-8")
 ddl_schema = {}   # table -> {column: type}
 ddl_order = []
@@ -170,6 +166,7 @@ for t, c in column_refs:
         record("2", c in ddl_schema[t], f"column {t}.{c}")
 
 # secondary hard gate: sqlglot qualify() against the contract schema
+# Verified by: CHECK 2 (this script's qualify() record).
 qualify_errors = []
 for stmt in create_stmts:
     try:
@@ -180,10 +177,7 @@ record("2", not qualify_errors,
        "sqlglot.qualify(views, schema=contract DDL) — no unresolved identifiers"
        if not qualify_errors else "; ".join(qualify_errors))
 
-# ---------------------------------------------------------------------------
-# CHECK 3 — measure names: build_guide.md <-> dax_measures.dax (both ways),
-#           plus columns used by DAX vs views.sql
-# ---------------------------------------------------------------------------
+# --- CHECK 3: guide <-> DAX <-> views cross-check (the print below states it) ---
 print("\n== CHECK 3: measure / column cross-check (guide <-> DAX <-> views) ==")
 
 dax_text = DAX.read_text(encoding="utf-8")
@@ -209,6 +203,7 @@ for cols in view_columns.values():
 
 # direction: every bracketed reference in the guide must be a defined measure
 # or a view column (the guide's convention — see top of build_guide.md)
+# Verified by: CHECK 3 (this script's guide-reference records).
 for ref in dict.fromkeys(guide_brackets):
     if ref in dax_measures:
         record("3", True, f"guide reference [{ref}] → defined in dax_measures.dax")

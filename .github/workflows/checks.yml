@@ -1,0 +1,53 @@
+# WHAT:      CI checks workflow — T0-header guardrail, pytest suite, and the
+#            54-check data-contract verification, on every push and PR.
+# WHY:       Phase-6 guardrail (REFACTOR_PLAN §5): stop the reorganised tree
+#            rotting back — a dropped header, a broken test, or contract drift
+#            fails the push/PR instead of waiting for the next 10:00 UTC run.
+#            Runs on windows-latest with the same venv install as
+#            daily_pipeline.yml so the two workflows share one environment
+#            story; deliberately holds NO credentials — checks need none,
+#            pinned by the no-secrets guard in tests/test_workflow_yaml.py.
+#            Verified by: tests/test_workflow_yaml.py (test_checks_workflow_*).
+# INPUTS:    this checkout + requirements.txt. No credentials.
+# OUTPUTS:   one checks run per push/PR; any failed step fails the job.
+# CALLERS:   GitHub Actions (push, pull_request); humans via workflow_dispatch
+#            is intentionally absent to stay minimal.
+
+name: checks
+
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: checks-${{ github.ref }}
+  cancel-in-progress: true   # a newer push makes older in-flight runs moot
+
+jobs:
+  checks:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+          cache: pip
+
+      - name: Create venv
+        run: py -3 -m venv .venv
+
+      - name: Install dependencies
+        run: .venv\Scripts\python.exe -m pip install -r requirements.txt
+
+      - name: Check T0 headers
+        run: .venv\Scripts\python.exe scripts/check_headers.py
+
+      - name: Run tests
+        run: .venv\Scripts\python.exe -m pytest -q
+
+      - name: Verify data contract
+        run: .venv\Scripts\python.exe dashboard/verify_contract.py
