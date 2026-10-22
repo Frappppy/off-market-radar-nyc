@@ -1,9 +1,21 @@
-"""CLI for stage 2 (clean): ``python -m src.clean --in <raw> --out <cleaned>``.
+"""WHAT:      CLI for stage 2 (clean): ``python -m src.clean --in <raw> --out <cleaned>``.
 
 Reads ``jobs/<run_id>/raw/listings.jsonl`` and writes
 ``listings_<snapshot_date>.parquet`` + the same ``.csv``, plus
 ``manifest.json`` and ``process_log.md`` (docs/data_contract.md).
-Exit code 0 = success.
+WHY:        argparse + orchestration only; the transform lives in
+            ``derive.clean_file``, log text in ``processlog``.
+INPUTS:     ``argv``: ``--in`` (raw dir or .jsonl), ``--out``, ``--run-id``.
+OUTPUTS:    Exit code 0 = success, 1 = failure (with best-effort failure
+            artifacts in ``--out``).
+CALLERS:    ``python -m src.clean`` (``__main__``), ``scripts/run_daily.py``.
+TESTED BY:  ``tests/test_clean.py::test_cli_writes_identical_csv_and_parquet``,
+            ``::test_empty_input_writes_valid_empty_outputs``,
+            ``::test_cli_missing_input_fails_cleanly`` (exit 1),
+            ``::test_run_id_inferred_from_raw_manifest``.
+Note (phase-2 gate fix): the process-log/failure writers (``_build_log``,
+``_failed_log``, ``_write_failure_artifacts``, ``MANIFEST_KEYS``) moved
+verbatim into ``processlog.py``.
 """
 
 from __future__ import annotations
@@ -15,17 +27,14 @@ import traceback
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .core import RUN_ID_RE, CleanStats, clean_file, utc_now_iso
+from ..common import runid
+from ..common.evidence import write_manifest
+from ..common.timeutil import utc_now_iso
+from .derive import clean_file
+from .processlog import _build_log, _write_failure_artifacts
 
-MANIFEST_KEYS = (
-    "stage",
-    "run_id",
-    "records_in",
-    "records_out",
-    "started_at",
-    "finished_at",
-    "status",
-)
+
+# --- argument helpers --------------------------------------------------------
 
 
 def resolve_input(value: str) -> Path:
@@ -46,6 +55,7 @@ def resolve_run_id(explicit: str | None, input_path: Path) -> str:
         return explicit
     raw_dir = input_path.parent
     manifest_path = raw_dir / "manifest.json"
+    manifest_run_id = None
     if manifest_path.is_file():
         try:
             data = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -53,135 +63,15 @@ def resolve_run_id(explicit: str | None, input_path: Path) -> str:
             data = {}
         value = data.get("run_id")
         if isinstance(value, str) and value:
-            return value
-    parent = raw_dir.parent.name
-    return parent if RUN_ID_RE.match(parent) else "unknown"
-
-
-def _build_log(
-    *,
-    run_id: str,
-    started_at: str,
-    finished_at: str,
-    input_path: Path,
-    out_dir: Path,
-    stats: CleanStats,
-    files: list[tuple[str, int, int]],
-    fallback_note: str | None,
-) -> str:
-    dropped_note = (
-        ", ".join(f"`{c}`" for c in stats.dropped_columns)
-        if stats.dropped_columns
-        else "none"
-    )
-    extras_note = (
-        ", ".join(f"`{c}`" for c in stats.extra_columns)
-        if stats.extra_columns
-        else "none"
-    )
-    lines = [
-        "# process log — stage 2 (clean)",
-        "",
-        f"- `run_id`: `{run_id}`",
-        f"- `started_at`: {started_at}",
-        f"- input: `{input_path}`",
-        f"- output dir: `{out_dir}`",
-        "",
-        "## Read",
-        f"- non-blank lines: {stats.lines}; records parsed: {stats.records_in}; "
-        f"malformed lines skipped: {stats.skipped_lines}",
-        f"- extra scraper columns passed through: {extras_note}",
-        f"- nested columns dropped from tabular output (raw JSONL keeps the "
-        f"audit trail): {dropped_note} — present in {stats.price_history_rows} rows",
-        "",
-        "## Transform",
-        "- `address_std`: uppercase, whitespace collapsed, trimmed "
-        "(missing address stays null)",
-        "- `snapshot_date`: UTC date parsed from `scraped_at` "
-        f"({stats.distinct_snapshot_dates} distinct date(s) in this run; "
-        f"file named for the majority date)",
-    ]
-    if fallback_note:
-        lines.append(f"- WARNING: {fallback_note}")
-    lines += [
-        "- `price_per_sqft` = price_current / living_area_sqft "
-        "(null when sqft is null or 0)",
-        "- `price_drop_abs` = price_previous - price_current; "
-        "`price_drop_pct` = abs / previous * 100 (null if either is missing)",
-        "- `motivation_score`: High = DOM>90 AND drop>5%; Medium = not High AND "
-        "(DOM>90 OR drop>5%); Low otherwise — missing DOM treated as <=90, "
-        "missing drop as <=5%",
-        "- `price_reduced`: site flag OR price_previous > price_current "
-        f"({stats.reduced_flag_missing} row(s) had no boolean site flag)",
-    ]
-    if stats.unknown_property_types:
-        lines.append(
-            "- WARNING: property_type values outside the contract enum: "
-            + ", ".join(f"`{v}`" for v in stats.unknown_property_types)
-            + " (passed through unchanged)"
-        )
-    lines += [
-        "",
-        "## Write",
-    ]
-    for name, rows, size in files:
-        lines.append(f"- `{name}` — {rows} rows, {size} bytes")
-    lines.append("- `manifest.json`")
-    lines += [
-        "",
-        "## Result",
-        f"- `finished_at`: {finished_at}",
-        f"- records_in: {stats.records_in}; records_out: {stats.records_out}",
-        "- status: `success`",
-        "",
-    ]
-    return "\n".join(lines)
-
-
-def _failed_log(run_id: str, started_at: str, input_path: Path, error: str) -> str:
-    return "\n".join(
-        [
-            "# process log — stage 2 (clean)",
-            "",
-            f"- `run_id`: `{run_id}`",
-            f"- `started_at`: {started_at}",
-            f"- input: `{input_path}`",
-            "",
-            "## Error",
-            "```",
-            error.rstrip(),
-            "```",
-            "",
-            "## Result",
-            "- status: `failed`",
-            "",
-        ]
+            manifest_run_id = value
+    return runid.resolve_run_id(
+        manifest_run_id=manifest_run_id,
+        dir_run_id=runid.run_id_from_dir(raw_dir.parent),
+        fallback="unknown",
     )
 
 
-def _write_failure_artifacts(out_dir: Path, run_id: str, started_at: str, input_path: Path, error: str) -> None:
-    try:
-        out_dir.mkdir(parents=True, exist_ok=True)
-        manifest = {key: None for key in MANIFEST_KEYS}
-        manifest.update(
-            {
-                "stage": "clean",
-                "run_id": run_id,
-                "records_in": None,
-                "records_out": None,
-                "started_at": started_at,
-                "finished_at": utc_now_iso(),
-                "status": "failed",
-            }
-        )
-        (out_dir / "manifest.json").write_text(
-            json.dumps(manifest, indent=2) + "\n", encoding="utf-8"
-        )
-        (out_dir / "process_log.md").write_text(
-            _failed_log(run_id, started_at, input_path, error), encoding="utf-8"
-        )
-    except OSError:
-        pass  # best effort only — the primary error is already reported
+# --- main --------------------------------------------------------------------
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -256,9 +146,7 @@ def main(argv: list[str] | None = None) -> int:
             "finished_at": utc_now_iso(),
             "status": "success",
         }
-        (out_dir / "manifest.json").write_text(
-            json.dumps(manifest, indent=2) + "\n", encoding="utf-8"
-        )
+        write_manifest(out_dir, manifest)
         (out_dir / "process_log.md").write_text(
             _build_log(
                 run_id=run_id,
@@ -284,11 +172,9 @@ def main(argv: list[str] | None = None) -> int:
             )
         return 0
     except Exception:
+        # any crash -> best-effort failure artifacts + exit 1
+        # (this generic path is untested — see header / REPO_MAP §10)
         error = traceback.format_exc()
         _write_failure_artifacts(out_dir, run_id, started_at, input_path, error)
         print(f"clean failed: {error.strip().splitlines()[-1]}", file=sys.stderr)
         return 1
-
-
-if __name__ == "__main__":
-    sys.exit(main())

@@ -1,4 +1,14 @@
-"""tests scripts/run_daily.py: stage commands, skip logic, run_log.md (no scraping)."""
+"""WHAT:      scripts/run_daily.py guards — UTC run_id format, the daily volume
+           policy (30 pages / 120 details / 5s), stage command construction,
+           --skip-scrape reuse rules, latest_raw_dir, run_log.md evidence for
+           success/failure/skip flows, and config/*.local.env precedence.
+WHY:       The orchestrator is what CI actually executes; its defaults ARE the
+           compliance/volume policy and its failure semantics decide whether a
+           bad run exits non-zero. Stages are tiny scripted subprocesses.
+INPUTS:    the run_daily module (imported by file path) + tmp_path.
+OUTPUTS:   pytest verdicts only; run_log.md files inside tmp_path.
+CALLERS:   `python -m pytest` — suite baseline: 155 passed, 2 skipped.
+"""
 
 import importlib.util
 import re

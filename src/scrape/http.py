@@ -1,21 +1,39 @@
+"""WHAT:      The stage-1 HTTP client — ``ZillowClient`` (paced, single-flight,
+            proxy + TLS-impersonated GETs), block detection
+            (``looks_like_block``/``CaptchaBlocked``) and the 429/5xx/transport
+            retry policy.
+WHY:        Every network contact with Zillow funnels through this one class so
+            the robots gate (gate 1, each request), the pacing floor and the
+            CAPTCHA hard-stop (I11) cannot be sidestepped by any caller;
+            retries live here so ``run``/``phases`` only ever see a final
+            ``FetchResult``.
+INPUTS:     Proxy URL + pacing/timeout settings; URL strings.
+OUTPUTS:    ``FetchResult`` dataclasses; raises ``CaptchaBlocked`` (never
+            bypassed, I11) or ``RateLimited`` when the retry budget is spent.
+CALLERS:    ``src.scrape.run.ScrapeRun`` (``_new_client``/``_fetch``);
+            ``tests/test_scrape.py`` (``looks_like_block``).
+TESTED BY:  ``tests/test_scrape.py::test_perimeterx_marker_is_detected``;
+            the 429/5xx retry loops and pacing are untested (scrape
+            enforcement-loop gap, REPO_MAP §10.4).
+"""
+
 import time
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from pathlib import Path
 
 from curl_cffi import requests as cffi_requests
 
-from .config import IMPERSONATE, is_allowed_url, scrub_secrets, url_slug
+from ..common.timeutil import utc_now_iso
+from .config import IMPERSONATE
+from .proxy import scrub_secrets
+from .robots import is_allowed_url
+
+# --- result type + block detection ------------------------------------------
 
 PX_MARKERS = (
     "px-captcha",
     "access to this page has been denied",
     "press & hold to confirm",
 )
-
-
-def utc_now_iso():
-    return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
 class CaptchaBlocked(RuntimeError):
@@ -42,6 +60,8 @@ class FetchResult:
 
 
 def looks_like_block(status, text):
+    """403 is treated as a block outright; 200s are scanned for PX markers.
+    Verified by: test_perimeterx_marker_is_detected"""
     if status == 403:
         return True
     if not text:
@@ -59,19 +79,19 @@ def _parse_retry_after(value):
         return None
 
 
+# --- client -----------------------------------------------------------------
+
+
 class ZillowClient:
-    def __init__(self, proxy_url, min_delay=2.0, timeout=45.0, html_dir=None):
+    def __init__(self, proxy_url, min_delay=2.0, timeout=45.0):
         self._proxy_url = proxy_url
         self._min_delay = float(min_delay)
         self._timeout = float(timeout)
-        self._html_dir = Path(html_dir) if html_dir else None
         self._last_start = 0.0
         self.audit = []
         # One persistent session per run: real browsers carry the cookies a
-        # search page sets into subsequent /homedetails/ requests. Without
-        # them PerimeterX challenged detail pages that pass when the cookie
-        # chain is intact (verified 2026-10-15: the same detail URL answered
-        # 403 twice from cookie-less clients and 200 from this session).
+        # search page sets into subsequent /homedetails/ requests (why that
+        # matters for PerimeterX here: docs/incidents/2026-10-15-px-cookie-chain.md).
         # This is ordinary browser behavior, never a challenge bypass - any
         # actual challenge still aborts the run below.
         self._session = cffi_requests.Session()
@@ -80,15 +100,6 @@ class ZillowClient:
         wait = self._min_delay - (time.monotonic() - self._last_start)
         if wait > 0:
             time.sleep(wait)
-
-    def _save_html(self, name, result):
-        if self._html_dir is None or not result.text:
-            return
-        target = name or url_slug(result.url)
-        try:
-            (self._html_dir / f"{target}.html").write_text(result.text, encoding="utf-8")
-        except OSError:
-            pass
 
     def _get(self, url):
         self._pace()
@@ -120,6 +131,8 @@ class ZillowClient:
         self.audit.append({"url": url, "status": result.status, "fetched_at": result.fetched_at})
         return result
 
+    # --- gated fetching + retries --------------------------------------------
+
     def fetch(self, url, name=None):
         if not is_allowed_url(url):
             raise ValueError(f"refusing URL outside robots-allowed Zillow paths: {url}")
@@ -128,7 +141,6 @@ class ZillowClient:
         attempts_transport = 0
         while True:
             result = self._get(url)
-            self._save_html(name, result)
             if looks_like_block(result.status, result.text):
                 raise CaptchaBlocked(url, result.status)
             if result.status == 429:

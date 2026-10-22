@@ -1,6 +1,14 @@
-"""Stale-listing marking (Tier 1.1): SQL shape, rowcount, reactivation.
-
-Pure unit tests — a fake cursor/connection stands in for psycopg, no live DB.
+"""WHAT:      Tier-1.1 stale-marking guards — the _MARK_STALE SQL shape (count
+           gate, MIN(started_at) cut-off, success-only window, bound miss_runs),
+           cold-start no-op below STALE_RUNS, rowcount pass-through with an
+           explicit miss_runs, and reactivation by the listing upsert.
+WHY:       Marking a live listing inactive hides it from the site; the SQL has
+           failure modes (now() fallback, missing count gate) that would
+           deactivate the whole table, so its text is asserted directly.
+           Pure unit tests — FakeCursor/FakeConn stand in for psycopg.
+INPUTS:    src.store.db statement constants + fakes (no live DB).
+OUTPUTS:   pytest verdicts only.
+CALLERS:   `python -m pytest` — suite baseline: 155 passed, 2 skipped.
 """
 
 from src.store import db

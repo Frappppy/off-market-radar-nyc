@@ -1,4 +1,14 @@
-"""Schema validation: contract DDL parses as Postgres (sqlglot) and is idempotent."""
+"""WHAT:      Schema-shape guards for sql/schema.sql, the tier-1 migration and
+           dashboard/views.sql: Postgres parse, idempotency, required
+           indexes/keys, the is_active upgrade guard, upsert SQL shape.
+WHY:       The store stage applies schema.sql on EVERY run; a broken or
+           non-idempotent statement takes the scheduled load down, so the DDL
+           text is asserted directly — no live database needed.
+INPUTS:    sql/schema.sql, sql/migrations/2026-10-16_tier1_is_active.sql,
+           dashboard/views.sql, src.store.db statement constants.
+OUTPUTS:   pytest verdicts only.
+CALLERS:   `python -m pytest` — suite baseline: 155 passed, 2 skipped.
+"""
 
 from pathlib import Path
 

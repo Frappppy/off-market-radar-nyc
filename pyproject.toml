@@ -1,0 +1,22 @@
+# Pytest configuration — Project 1: Off-Market Radar NYC
+#
+# WHY THIS FILE EXISTS (Phase 0 of the refactor, see REFACTOR_PLAN.md):
+#   Previously the only pytest configuration lived in `tests/conftest.py`, which
+#   mutated `sys.path` at import time so that `import src.*` resolved from the
+#   repo root. That hack is being replaced by the declarative `pythonpath` option
+#   below, which does the same job without runtime magic and lets every test file
+#   (and any future test directory) import `src.*` uniformly.
+#
+# INVARIANTS: none of the settings below may weaken test discovery — the suite
+# must still collect every `tests/test_*.py` file.
+
+[tool.pytest.ini_options]
+# Repo root on sys.path so `import src.scrape / src.clean / src.store` works.
+pythonpath = ["."]
+testpaths = ["tests"]
+addopts = "-ra"
+
+# NOTE: no custom markers are registered yet. If credential-dependent tests
+# (see `tests/test_scrape.py` proxy/scrub tests, which silently `pytest.skip`
+# without DATAIMPULSE_* env vars) are ever given a marker, register it here so
+# `pytest -m "not db"` style selection works and skips become visible.

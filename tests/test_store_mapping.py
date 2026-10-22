@@ -1,4 +1,15 @@
-"""Unit tests for the cleaned-DataFrame -> SQL row mapping (no live DB)."""
+"""WHAT:      Mapping guards — cleaned DataFrame row -> SQL tuple for listings
+           (13 columns) and snapshots (12): column order, coercion (zip from
+           float, NaN->None, blank text->None, address fallback), rounding,
+           and the required identity/enum/date fields that raise
+           StoreError/MappingError.
+WHY:       The stage-3 INSERTs interpolate these tuples POSITIONALLY (REPO_MAP
+           I12), so a wrong value or order corrupts rows silently; tested
+           against dict/pandas inputs only — no live DB.
+INPUTS:    synthetic cleaned rows + src.store.mapping.
+OUTPUTS:   pytest verdicts only.
+CALLERS:   `python -m pytest` — suite baseline: 155 passed, 2 skipped.
+"""
 
 from datetime import date, datetime, timezone
 

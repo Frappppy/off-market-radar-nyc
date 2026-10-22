@@ -1,21 +1,30 @@
-"""CLI — Stage 3 store.
-
-    python -m src.store --in jobs/<run_id>/cleaned      # needs DATABASE_URL
-
-Exit codes: 0 success · 1 load/runtime failure (pipeline_runs=failed)
-            2 configuration/input failure (nothing written to the DB).
+"""WHAT:      CLI for stage 3 (store): ``python -m src.store`` — fail-fast
+           config check, cleaned-dir read, three committed transactions
+           (schema+marker / map+upsert / success+stale-mark), evidence files.
+WHY:        The run must leave an auditable trail (manifest + process log)
+           and a ``pipeline_runs`` row for every attempt, success or not.
+INPUTS:     argv (``--in``, ``--out``, ``--run-id``, ``--skip-schema``);
+           the cleaned directory on disk; ``DATABASE_URL``.
+OUTPUTS:    ``store/manifest.json`` + ``process_log.md``; Postgres writes;
+            exit codes 0 success · 1 runtime failure (pipeline_runs=failed)
+            · 2 config/input failure (nothing written to the DB).
+CALLERS:    ``python -m src.store`` (``__main__`` -> ``main``).
+TESTED BY:  ``tests/test_store_cli.py`` (exit-code/config paths),
+           ``tests/test_store_flow.py`` (success + failure DB flows).
 """
 
 from __future__ import annotations
 
-import argparse
 import sys
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 
 import psycopg
 
+from ..common import runid
+from ..common.evidence import append_log, iso, utc_now, write_manifest
 from . import StoreError
+from .args import parse_args
 from .db import (
     STALE_RUNS,
     apply_schema,
@@ -30,54 +39,24 @@ from .db import (
 )
 from .loader import load_cleaned_dir, read_manifest
 from .mapping import require_columns, listing_tuple, snapshot_tuple
-from .reporting import append_log, iso, utc_now, write_manifest
 
 EXIT_OK = 0
 EXIT_FAILURE = 1
 EXIT_CONFIG = 2
 
-
-def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        prog="python -m src.store",
-        description="Stage 3: upsert cleaned listings into Postgres (idempotent).",
-    )
-    parser.add_argument(
-        "--in",
-        dest="input_dir",
-        required=True,
-        metavar="DIR",
-        help="cleaned stage output directory, e.g. jobs/<run_id>/cleaned",
-    )
-    parser.add_argument(
-        "--out",
-        dest="output_dir",
-        default=None,
-        metavar="DIR",
-        help="evidence directory for manifest/process_log (default: <input dir>/../store)",
-    )
-    parser.add_argument(
-        "--run-id",
-        default=None,
-        help="pipeline_runs.run_id (default: cleaned manifest, else parent dir name, else UTC now)",
-    )
-    parser.add_argument(
-        "--skip-schema",
-        action="store_true",
-        help="do not apply sql/schema.sql before loading",
-    )
-    return parser.parse_args(argv)
+# --- run-id + record-count resolution ----------------------------------------
 
 
 def resolve_run_id(explicit: str | None, in_dir: Path, manifest: dict) -> str:
-    if explicit:
-        return explicit
     rid = manifest.get("run_id")
-    if isinstance(rid, str) and rid.strip():
-        return rid.strip()
-    if in_dir.name == "cleaned" and in_dir.parent.name:
-        return in_dir.parent.name
-    return datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    manifest_run_id = rid.strip() if isinstance(rid, str) and rid.strip() else None
+    parent = in_dir.parent.name if in_dir.name == "cleaned" else ""
+    return runid.resolve_run_id(
+        explicit=explicit,
+        manifest_run_id=manifest_run_id,
+        dir_run_id=parent or None,
+        fallback=runid.utc_stamp(),
+    )
 
 
 def resolve_records_scraped(in_dir: Path) -> int | None:
@@ -87,6 +66,9 @@ def resolve_records_scraped(in_dir: Path) -> int | None:
         if isinstance(value, int) and not isinstance(value, bool):
             return value
     return None
+
+
+# --- evidence writers -------------------------------------------------------
 
 
 def _write_evidence(
@@ -112,10 +94,13 @@ def _write_evidence(
     )
 
 
+# --- main --------------------------------------------------------------------
+
+
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
 
-    # 1. fail fast on missing DATABASE_URL before touching anything else
+    # 1. fail fast on missing DATABASE_URL (Verified by: test_missing_database_url_exits_2)
     try:
         get_database_url()
     except StoreError as exc:
@@ -166,7 +151,7 @@ def main(argv: list[str] | None = None) -> int:
             if not args.skip_schema:
                 apply_schema(conn)
             start_pipeline_run(conn, run_id, source_field)
-        with conn.transaction():  # transaction 2: map + upsert (all-or-nothing)
+        with conn.transaction():  # transaction 2: map + upsert (all-or-nothing; Verified by: test_failure_flow_marks_failed)
             listing_rows = [listing_tuple(row) for row in df.to_dict("records")]
             snapshot_rows = [snapshot_tuple(row) for row in df.to_dict("records")]
             upsert_listings(conn, listing_rows)

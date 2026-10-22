@@ -1,3 +1,19 @@
+-- WHAT:      Stage 3 DDL — listings, listing_snapshots, pipeline_runs (+ the 2
+--            required indexes), applied by the store stage on EVERY run.
+-- WHY:       The executable half of the docs/data_contract.md DDL contract:
+--            this file runs (src.store.db.apply_schema), the contract
+--            documents it, and nothing else links the two copies — the parity
+--            tests diff them. (Detailed rationale in the block below.)
+-- INPUTS:    docs/data_contract.md § "Stage 3 — SQL" (source of truth).
+-- OUTPUTS:   idempotent Postgres DDL on the target database (Neon).
+-- CALLERS:   src.store.db.apply_schema (every load);
+--            docs/apply_tier1_migration.md (manual application).
+-- TESTED BY: tests/test_schema_sqlglot.py (test_schema_parses_as_postgres,
+--            test_schema_is_idempotent_and_indexed,
+--            test_schema_carries_the_is_active_upgrade_guard),
+--            tests/test_contract_parity.py
+--            (test_contract_stage3_ddl_matches_schema_sql — I13 parity).
+
 -- Project 1: The Off-Market Real Estate Deal Finder — Stage 3 schema
 -- Source of truth: docs/data_contract.md § "Stage 3 — SQL".
 -- DDL copied verbatim from the contract; only idempotency guards

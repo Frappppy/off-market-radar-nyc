@@ -1,5 +1,15 @@
-"""Full src.store CLI flow against a fake connection (no live DB):
-transactions, pipeline_runs lifecycle, manifest/process_log evidence."""
+"""WHAT:      Full src.store CLI flow against a FakeConn (no live DB) —
+           transaction boundaries, pipeline_runs lifecycle (start/finish,
+           success and failed), stale-marking invocation, --skip-schema, and
+           the manifest / process_log.md evidence written per run.
+WHY:       The CLI is where all-or-nothing semantics and evidence writing are
+           decided; a rollback bug or an unlogged failure would corrupt the
+           freshness data the site trusts. Every collaborator is monkeypatched,
+           so the tests are deterministic, offline and fast.
+INPUTS:    tmp_path parquet fixtures + src.store.{cli,db} with fakes.
+OUTPUTS:   pytest verdicts only; store/ artifacts inside tmp_path.
+CALLERS:   `python -m pytest` — suite baseline: 155 passed, 2 skipped.
+"""
 
 import json
 

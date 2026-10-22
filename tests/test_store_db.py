@@ -1,4 +1,14 @@
-"""Connection config + redaction tests (no live DB)."""
+"""WHAT:      src.store.db guards — DSN redaction (never leak a password into
+           logs or error messages), DATABASE_URL resolution (env beats the
+           config file; fail fast with an actionable message), and the
+           statement shapes the I12 contract pins (13/12 placeholders).
+WHY:       Connection handling and credential redaction run on every load and
+           otherwise fail silently until production; the statement shapes are
+           the bridge between mapping.py and schema.sql.
+INPUTS:    monkeypatched env / tmp_path files + src.store.db (no live DB).
+OUTPUTS:   pytest verdicts only.
+CALLERS:   `python -m pytest` — suite baseline: 155 passed, 2 skipped.
+"""
 
 import pytest
 

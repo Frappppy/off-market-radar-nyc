@@ -1,4 +1,13 @@
-"""Loader tests: parquet preferred, csv fallback, filename-derived dates."""
+"""WHAT:      Stage-3 loader guards — parquet preferred, CSV fallback (zip read
+           as string), snapshot_date derived from the filename (both date
+           forms), multi-file concatenation, manifest reads, StoreError texts.
+WHY:       The loader decides what the store stage actually ingests; its file
+           selection and date rules are invisible downstream, so they are
+           pinned here with tmp_path files only (no live DB).
+INPUTS:    tmp_path fixtures + src.store.loader.
+OUTPUTS:   pytest verdicts only.
+CALLERS:   `python -m pytest` — suite baseline: 155 passed, 2 skipped.
+"""
 
 import json
 

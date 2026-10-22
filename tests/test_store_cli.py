@@ -1,4 +1,13 @@
-"""src.store CLI failure paths (no live DB) — exit codes and messages."""
+"""WHAT:      src.store CLI failure paths (no live DB) — exit code 2 for
+           DATABASE_URL missing / input dir missing / no listings_ files /
+           required columns missing, run_id precedence, and records_scraped
+           resolution (the raw manifest wins).
+WHY:       These are the operator-facing errors of the load step; the exit
+           codes and messages are the contract the runbook acts on.
+INPUTS:    monkeypatched env + tmp_path files + src.store.{cli,db}.
+OUTPUTS:   pytest verdicts only.
+CALLERS:   `python -m pytest` — suite baseline: 155 passed, 2 skipped.
+"""
 
 import pandas as pd
 import pytest

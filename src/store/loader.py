@@ -1,5 +1,15 @@
-"""Read the cleaned-stage output directory (parquet preferred, csv fallback).
-
+"""WHAT:      Stage-3 input reader — the cleaned-stage output directory
+           (parquet preferred, csv fallback) and its ``manifest.json``.
+WHY:        The store stage must accept exactly what stage 2 writes
+           (``jobs/<run_id>/cleaned/listings_<snapshot_date>.*``); keeping
+           the file-choice, date-derivation and concat rules here means
+           ``cli.main`` never touches the filesystem itself.
+INPUTS:     A ``Path`` to a cleaned directory (files on disk; no network).
+OUTPUTS:    ``(DataFrame, files_read)`` from ``load_cleaned_dir``; manifest
+           ``dict`` (``{}`` when absent) from ``read_manifest``.
+CALLERS:    ``src.store.cli`` (``load_cleaned_dir``, ``read_manifest``).
+TESTED BY:  ``tests/test_store_loader.py`` (parquet-wins, csv fallback,
+           filename date derivation, concat, missing-dir errors).
 Contract: jobs/<run_id>/cleaned/listings_<snapshot_date>.parquet (+ .csv).
 """
 
@@ -14,15 +24,6 @@ import pandas as pd
 from . import StoreError
 
 _FILE_DATE_RE = re.compile(r"listings_(\d{4}-\d{2}-\d{2}|\d{8})(?:\.|_)")
-
-CLEANED_COLUMNS = (
-    # contract-required identity + snapshot fields
-    "source",
-    "listing_id",
-    "snapshot_date",
-    "scraped_at",
-    "motivation_score",
-)
 
 
 def read_manifest(directory: Path) -> dict:
@@ -67,6 +68,7 @@ def load_cleaned_dir(in_dir: Path) -> tuple[pd.DataFrame, list[Path]]:
     """Return (all cleaned rows, files actually read).
 
     Parquet wins when both formats exist (contract: parquet preferred).
+    Verified by: test_parquet_preferred_over_csv.
     """
     if not in_dir.is_dir():
         raise StoreError(f"input directory not found: {in_dir}")

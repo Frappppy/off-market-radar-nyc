@@ -1,21 +1,43 @@
-"""Pure row mapping: cleaned DataFrame row -> database tuples.
+"""WHAT:      Pure row mapping — cleaned DataFrame row -> database tuples
+           (``require_columns``, ``listing_tuple``, ``snapshot_tuple``).
+WHY:        Every null/enum/NOTNULL decision for the two upserts lives in
+           one reviewable place; conversions are null-safe so pandas
+           NaN/NaT/NA and numpy scalars become plain Python values that
+           psycopg can adapt. No database access here — unit-testable alone.
+INPUTS:     A cleaned row as ``Mapping[str, Any]`` (``df.to_dict("records")``).
+OUTPUTS:    13-tuple (listings) / 12-tuple (snapshots); ``MappingError``
+           (imported from ``scalars``) on unusable rows.
+CALLERS:    ``src.store.cli`` (per-row before each upsert transaction).
+TESTED BY:  ``tests/test_store_mapping.py`` (contract columns, null-safety,
+           enum/NOTNULL rejection, dataframe roundtrip).
 
-No database access here — this module is unit-tested in isolation
-(tests/test_store_mapping.py).  Conversions are null-safe: pandas NaN/NaT/NA
-and numpy scalars become plain Python values that psycopg can adapt.
+Phase-2 gate fix: the scalar coercion helpers (``_py``/``_text``/``_float``/
+``_int``/``_bool``/``_date``/``_timestamp``) and ``MappingError`` moved
+verbatim into ``scalars.py`` and are imported below, so every public import
+path (``mapping.MappingError``, ``mapping.listing_tuple``, ...) is unchanged.
 """
 
 from __future__ import annotations
 
-import math
-from datetime import date, datetime, timezone
 from typing import Any, Mapping
 
 import pandas as pd
 
-from . import StoreError
+from .scalars import (
+    MappingError,
+    _bool,
+    _date,
+    _float,
+    _int,
+    _timestamp,
+    _text,
+)
+
+# --- column contracts -------------------------------------------------------
 
 # Column order must match the INSERT statements in db.py.
+#: Verified by: test_mapping_listing_columns_match_schema,
+#:             test_mapping_snapshot_columns_match_schema
 LISTING_COLUMNS: tuple[str, ...] = (
     "source",
     "listing_id",
@@ -49,114 +71,7 @@ SNAPSHOT_COLUMNS: tuple[str, ...] = (
 
 MOTIVATION_SCORES = ("High", "Medium", "Low")
 
-_REQUIRED_LISTING = ("source", "listing_id")
-_REQUIRED_SNAPSHOT = ("source", "listing_id", "snapshot_date", "scraped_at", "motivation_score")
-
-
-class MappingError(StoreError):
-    """A cleaned row cannot be mapped to the contract schema."""
-
-
-def _py(value: Any) -> Any:
-    """numpy/pandas scalar -> Python scalar; NaN/NaT/NA -> None."""
-    if value is None:
-        return None
-    if isinstance(value, (list, tuple, dict)):  # e.g. raw price_history leaked in
-        return value
-    if hasattr(value, "item") and not isinstance(value, (str, bytes)):
-        try:
-            value = value.item()  # numpy scalar -> python scalar
-        except (ValueError, AttributeError):
-            pass
-    if isinstance(value, float):
-        return None if math.isnan(value) or math.isinf(value) else value
-    try:
-        if pd.isna(value):  # pd.NA, pd.NaT, None-in-object-dtype
-            return None
-    except (TypeError, ValueError):
-        pass
-    return value
-
-
-def _text(value: Any) -> str | None:
-    v = _py(value)
-    if v is None:
-        return None
-    if isinstance(v, float) and v.is_integer():
-        return str(int(v))  # CSV may parse zip "10001" as 10001.0
-    if isinstance(v, (int, float)):
-        return str(v)
-    s = str(v).strip()
-    return s if s else None
-
-
-def _float(value: Any) -> float | None:
-    v = _py(value)
-    return None if v is None else float(v)
-
-
-def _int(value: Any) -> int | None:
-    v = _py(value)
-    if v is None:
-        return None
-    if isinstance(v, str):
-        v = v.strip()
-        if not v:
-            return None
-        return int(float(v))
-    f = float(v)
-    return int(round(f))
-
-
-def _bool(value: Any) -> bool | None:
-    v = _py(value)
-    if v is None:
-        return None
-    if isinstance(v, str):
-        s = v.strip().lower()
-        if s in ("true", "t", "1", "yes"):
-            return True
-        if s in ("false", "f", "0", "no"):
-            return False
-        raise MappingError(f"cannot interpret {value!r} as boolean")
-    return bool(v)
-
-
-def _date(value: Any) -> date | None:
-    v = _py(value)
-    if v is None:
-        return None
-    if isinstance(v, datetime):
-        return v.date()
-    if isinstance(v, date):
-        return v
-    if isinstance(v, str):
-        s = v.strip()
-        for fmt in ("%Y-%m-%d", "%Y%m%d"):
-            try:
-                return datetime.strptime(s, fmt).date()
-            except ValueError:
-                continue
-        try:
-            return datetime.fromisoformat(s.replace("Z", "+00:00")).date()
-        except ValueError:
-            raise MappingError(f"cannot parse snapshot_date {v!r} (expected YYYY-MM-DD)")
-    raise MappingError(f"unsupported snapshot_date type: {type(v).__name__}")
-
-
-def _timestamp(value: Any, row_label: str) -> datetime:
-    v = _py(value)
-    if v is None:
-        raise MappingError(f"{row_label}: scraped_at is required (NOT NULL)")
-    if isinstance(v, datetime):
-        return v if v.tzinfo else v.replace(tzinfo=timezone.utc)
-    if isinstance(v, str):
-        try:
-            dt = datetime.fromisoformat(v.strip().replace("Z", "+00:00"))
-        except ValueError:
-            raise MappingError(f"{row_label}: cannot parse scraped_at {v!r} (ISO 8601)")
-        return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
-    raise MappingError(f"{row_label}: unsupported scraped_at type {type(v).__name__}")
+# --- validation -------------------------------------------------------------
 
 
 def require_columns(df: pd.DataFrame, columns: tuple[str, ...], stage_label: str) -> None:
@@ -165,8 +80,12 @@ def require_columns(df: pd.DataFrame, columns: tuple[str, ...], stage_label: str
         raise MappingError(f"{stage_label}: cleaned data is missing column(s): {', '.join(missing)}")
 
 
+# --- row mappers ------------------------------------------------------------
+
+
 def listing_tuple(row: Mapping[str, Any]) -> tuple:
-    """contract listings row; address prefers the normalized address_std."""
+    """contract listings row; address prefers the normalized address_std.
+    Verified by: test_listing_address_falls_back_to_raw_and_nan_to_none"""
     source = _text(row.get("source"))
     listing_id = _text(row.get("listing_id"))
     if source is None or listing_id is None:

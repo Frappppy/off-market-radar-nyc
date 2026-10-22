@@ -1,138 +1,36 @@
-"""Offline tests for stage 1 (scrape): parsers, robots gate, CLI contract.
-
-No network: fixtures are synthetic embeddings shaped exactly like the real
-Zillow pages recorded in ``jobs/probe/`` (see src/scrape/parsers.py docstring).
+"""WHAT:      Stage-1 (scrape) guards — search/detail parsers, record building,
+           property-type normalisation, robots gate, proxy-secret handling,
+           CAPTCHA detection, CLI defaults, run-id resolution, detail ordering.
+WHY:       The only code that touches Zillow; pinned OFFLINE (synthetic page
+           fixtures in tests/fixtures/zillow_pages.py) so parser or policy
+           drift fails here, not on the next scheduled run — no DNS, proxy or
+           credential is ever involved.
+INPUTS:    tests/fixtures/zillow_pages.py + src.scrape.* (imports only).
+OUTPUTS:   pytest verdicts only; no files written outside tmp_path.
+CALLERS:   `python -m pytest` — suite baseline: 155 passed, 2 skipped (the two
+           proxy tests skip without DATAIMPULSE_* credentials).
 """
-
-import json
 
 import pytest
 
-from src.scrape import config, parsers
+from src.scrape import parsing as parsers, proxy, robots
 from src.scrape.cli import MIN_DELAY, build_parser
 from src.scrape.http import looks_like_block
-from src.scrape.pipeline import resolve_run_id
-
-# --- fixtures ---------------------------------------------------------------
-
-SEARCH_CARD = {
-    "zpid": "123456",
-    "detailUrl": "https://www.zillow.com/homedetails/1-Main-St-Brooklyn-NY-11201/123456_zpid/",
-    "addressStreet": "1 Main St",
-    "addressCity": "Brooklyn",
-    "addressState": "NY",
-    "addressZipcode": "11201",
-    "address": "1 Main St, Brooklyn, NY 11201",
-    "unformattedPrice": 500000,
-    "price": "$500,000",
-    "beds": 2,
-    "baths": 1.0,
-    "area": 1200,
-    "latLong": {"latitude": 40.6941, "longitude": -73.9907},
-    "statusText": "House for sale",
-    "flexFieldText": "Price cut: $25,000 (9/1)",
-    "hdpData": {
-        "homeInfo": {
-            "zpid": 123456,
-            "homeType": "SINGLE_FAMILY",
-            "daysOnZillow": 112,
-            "priceChange": -25000,
-            "price": 500000,
-        }
-    },
-}
-
-SEARCH_PAGE = {
-    "props": {
-        "pageProps": {
-            "searchPageState": {
-                "cat1": {
-                    "searchResults": {"listResults": [SEARCH_CARD]},
-                    "searchList": {
-                        "pagination": {"nextUrl": "/new-york-ny/2_p/"},
-                        "totalResultCount": 22756,
-                    },
-                }
-            }
-        }
-    }
-}
-
-
-def _search_html(payload=None):
-    body = json.dumps(payload or SEARCH_PAGE)
-    return f'<html><script id="__NEXT_DATA__" type="application/json">{body}</script></html>'
-
-
-DETAIL_PROPERTY = {
-    "zpid": 123456,
-    "streetAddress": "1 Main St",
-    "hdpUrl": "/homedetails/1-Main-St-Brooklyn-NY-11201/123456_zpid/",
-    "city": "Brooklyn",
-    "state": "NY",
-    "zipcode": "11201",
-    "latitude": 40.6941,
-    "longitude": -73.9907,
-    "price": 475000,
-    "priceChange": -25000,
-    "priceChangeDateString": "2026-09-01",
-    "bedrooms": 2,
-    "bathrooms": 1.0,
-    "livingArea": 1200,
-    "daysOnZillow": 112,
-    "datePosted": 1781308800000,  # 2026-06-13T00:00:00Z
-    "homeType": "CONDO",
-    "resoFacts": {"homeType": "Cooperative", "propertySubType": ["Coop"]},
-    "priceHistory": [
-        {"date": "2026-09-01", "price": 475000},
-        {"date": "2026-06-12", "price": 500000},
-        {"date": "2011-05-01", "price": 300000, "event": "Sold"},
-    ],
-}
-
-
-def _detail_html(prop=None, price_cut_tag=False):
-    cache = {"Query{\"zpid\":123456}": {"property": prop or DETAIL_PROPERTY}}
-    next_data = {
-        "props": {
-            "pageProps": {
-                "componentProps": {
-                    # real pages ship gdpClientCache as a JSON *string*
-                    "gdpClientCache": json.dumps(cache)
-                }
-            }
-        }
-    }
-    tag = '<span class="price-change-tag"><span>Price cut: $25K (9/1)</span></span>' if price_cut_tag else ""
-    ld = json.dumps(
-        {
-            "@context": "https://schema.org",
-            "@type": ["RealEstateListing", "Product"],
-            "url": "https://www.zillow.com/homedetails/1-Main-St-Brooklyn-NY-11201/123456_zpid/",
-            "offers": {"price": 475000, "itemOffered": {"@type": "House"}},
-        }
-    )
-    return (
-        "<html>"
-        + tag
-        + f'<script type="application/ld+json">{ld}</script>'
-        + f'<script id="__NEXT_DATA__" type="application/json">{json.dumps(next_data)}</script>'
-        + "</html>"
-    )
-
-
-PX_PAGE = (
-    '<html lang="en"><head><meta charset="utf-8">'
-    '<meta name="description" content="px-captcha">'
-    "<title>Access to this page has been denied</title></head>"
-    "<body><script>window._pxAppId = 'PXHYx10rg3';</script></body></html>"
+from src.scrape.phases import PhasesMixin
+from src.scrape.run import resolve_run_id
+from tests.fixtures.zillow_pages import (
+    DETAIL_PROPERTY,
+    PX_PAGE,
+    SEARCH_CARD,
+    detail_html,
+    search_html,
 )
 
 # --- search parsing ---------------------------------------------------------
 
 
 def test_parse_search_page_extracts_cards_and_next_url():
-    page = parsers.parse_search_page(_search_html())
+    page = parsers.parse_search_page(search_html())
     assert len(page.listings) == 1
     assert page.next_url == "/new-york-ny/2_p/"
     assert page.total_result_count == 22756
@@ -170,7 +68,7 @@ def test_search_only_record_obeys_contract_shape():
 # --- detail parsing ---------------------------------------------------------
 
 def test_extract_detail_property_unwraps_stringified_cache():
-    prop = parsers.extract_detail_property(_detail_html())
+    prop = parsers.extract_detail_property(detail_html())
     assert prop["zpid"] == 123456
 
 
@@ -178,7 +76,7 @@ def test_detail_overrides_search_and_derives_price_fields():
     record = parsers.build_record(
         SEARCH_CARD,
         DETAIL_PROPERTY,
-        _detail_html(price_cut_tag=True),
+        detail_html(price_cut_tag=True),
         None,
         scraped_at="2026-10-15T00:00:00Z",
     )
@@ -270,7 +168,7 @@ def test_ms_to_date_utc():
     assert parsers.ms_to_date(None) is None
 
 
-# --- robots gate (config) ---------------------------------------------------
+# --- robots gate (robots) ---------------------------------------------------
 
 @pytest.mark.parametrize(
     "url,allowed",
@@ -292,26 +190,26 @@ def test_ms_to_date_utc():
     ],
 )
 def test_is_allowed_url(url, allowed):
-    assert config.is_allowed_url(url) is allowed
+    assert robots.is_allowed_url(url) is allowed
 
 
 def test_proxy_url_uses_mandatory_geo_and_never_leaks_in_display():
-    url = config.build_proxy_url(sessid="project1")
-    creds = config.load_dataimpulse_credentials()
+    url = proxy.build_proxy_url(sessid="project1")
+    creds = proxy.load_dataimpulse_credentials()
     if not creds.get("DATAIMPULSE_LOGIN"):  # no credentials in this environment
         pytest.skip("no DataImpulse credentials on this machine")
     assert "__cr.us" in url and ";sessid.project1:" in url
-    display = config.proxy_display("project1")
+    display = proxy.proxy_display("project1")
     assert creds["DATAIMPULSE_PASSWORD"] not in display
     assert creds["DATAIMPULSE_LOGIN"] not in display
 
 
 def test_scrub_secrets_masks_credentials():
-    creds = config.load_dataimpulse_credentials()
+    creds = proxy.load_dataimpulse_credentials()
     if not creds.get("DATAIMPULSE_PASSWORD"):
         pytest.skip("no DataImpulse credentials on this machine")
     text = f"boom {creds['DATAIMPULSE_PASSWORD']} end"
-    assert creds["DATAIMPULSE_PASSWORD"] not in config.scrub_secrets(text)
+    assert creds["DATAIMPULSE_PASSWORD"] not in proxy.scrub_secrets(text)
 
 
 # --- CAPTCHA detection (http) ----------------------------------------------
@@ -340,3 +238,22 @@ def test_resolve_run_id_prefers_parent_dir():
     import re
 
     assert re.fullmatch(r"\d{8}-\d{6}", stamp)
+
+
+# --- detail-target ordering (phases) ----------------------------------------
+
+
+def test_detail_targets_price_cuts_first():
+    """Detail phase visits site-flagged price cuts before the rest, then
+    truncates at the cap (anchors the rule asserted in ``phases._detail_targets``)."""
+    from types import SimpleNamespace
+
+    run = SimpleNamespace(
+        records={
+            "1": {"price_reduced": True},
+            "2": {"price_reduced": False},
+            "3": {},
+        },
+        max_details=2,
+    )
+    assert PhasesMixin._detail_targets(run) == ["1", "2"]
