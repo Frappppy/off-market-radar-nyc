@@ -47,7 +47,7 @@ Create **exactly these six** secrets:
 | `DATAIMPULSE_PASSWORD` | DataImpulse proxy password | Stage 1 `src.scrape` |
 | `DATAIMPULSE_HOST` | e.g. `gw.dataimpulse.com` | Stage 1 `src.scrape` |
 | `DATAIMPULSE_PORT` | e.g. `823` | Stage 1 `src.scrape` |
-| `DATAIMPULSE_COUNTRY` | e.g. `US` | Stage 1 `src.scrape` |
+| `DATAIMPULSE_COUNTRY` | e.g. `US` | **not read by the pipeline** — stage 1 fixes the exit country itself (`{login}__cr.us` in `src/scrape/proxy.py`); the secret exists only because the workflow's six are frozen by `tests/test_workflow_yaml.py` |
 
 The workflow injects them as environment variables (`${{ secrets.NAME }}` only —
 the file contains no values). Locally you would instead fill

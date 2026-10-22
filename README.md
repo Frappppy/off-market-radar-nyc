@@ -10,6 +10,12 @@ seller motivation, stores a historical time-series in Postgres, and surfaces the
 best deals two ways — a Next.js map/trends web app, and a Power BI dashboard for
 the analyst view.
 
+**Orientation:** [ARCHITECTURE.md](ARCHITECTURE.md) (the system in one screen) →
+this file → the `README.md` in each directory → the file's own T0 header
+(`WHAT/WHY/INPUTS/OUTPUTS/CALLERS`). Why each rule is what it is:
+[docs/decisions.md](docs/decisions.md). The pre-reorganisation tree is frozen in
+[REPO_MAP.md](REPO_MAP.md) — paths there are historical.
+
 ## How it works
 
 ```
@@ -39,43 +45,92 @@ the analyst view.
   `listings` (current state), `listing_snapshots` (append-only daily
   time-series, idempotent upserts), and `pipeline_runs` (ops log).
   `scripts/run_daily.py` orchestrates all three stages.
-- **Step 4 — Visualize (`dashboard/`)**: SQL views + DAX measures + a 10-step
-  build guide for a Power BI dashboard: **clustered map** of high-motivation
-  properties, **30-day trend line** of average price drops by zip, and a
-  **DOM > 60 slicer** wired to both visuals.
+- **Step 4 — Visualize (`dashboard/` + `site/`)**: SQL views consumed two ways —
+  a Power BI dashboard (clustered map of high-motivation properties, 30-day
+  trend line of average price drops by zip, DOM > 60 slicer; build guide in
+  `dashboard/build_guide.md`) and the Next.js site below.
 
 ## Repo layout
 
 > **Note:** this project folder **is** the repository root. `.github/workflows/`
-> (Actions only reads workflows from the repo root) and the gitignored `.venv/`
-> live here too. All commands below run from the repo root.
+> (Actions only reads workflows from the repo root) lives here too. All commands
+> below run from the repo root.
 
 ```
+ARCHITECTURE.md     the system map: stages, contracts, invariants, verification
+REPO_MAP.md         dated baseline of the pre-reorg tree (as of 6be2c61 — historical)
+REFACTOR_PLAN.md    the reorganisation plan + phase logs (what moved where)
+pyproject.toml      pytest config (pythonpath = ".", testpaths = "tests")
 .github/workflows/daily_pipeline.yml  cron: daily scrape -> clean -> store
-.venv/             local interpreter (gitignored)
-config/            proxy + DB connection templates (real values live in gitignored *.local.env)
+config/             proxy + DB connection templates (real values in gitignored *.local.env)
 docs/
-  data_contract.md the binding field-level contract between all four stages
-  robots_precheck.md  legality pre-flight record (see Compliance)
+  data_contract.md  the binding field-level contract between all four stages
+  decisions.md      ADR-lite: why each irreversible choice was made
+  incidents/        dated incident narratives (referenced by one-line pointers in code)
+  apply_tier1_migration.md  completed production migration runbook + hazards H1–H3
   deploy_github.md  how to wire GitHub Actions + Neon secrets
-  websiteplan.md   Vercel build plan for the portfolio website (not the pipeline)
-  roadmap.md       what comes next, in three tiers (credibility → differentiation → retention)
-src/scrape … src/clean … src/store    the three pipeline stages (CLI: python -m src.<stage>)
-sql/schema.sql     idempotent DDL (Neon/Postgres)
-dashboard/         views.sql, dax_measures.dax, build_guide.md
-site/              Next.js presentation layer (map, trends, CSV export)
-scripts/run_daily.py   daily orchestrator (used by GitHub Actions)
-scripts/live_db_check.ps1  live Postgres end-to-end check (ephemeral local PG18)
-jobs/<run_id>/     every run's raw/cleaned data, manifests, and process logs (evidence, gitignored)
-tests/             pytest suite across all stages
+  robots_precheck.md  legality pre-flight record (see Compliance)
+  roadmap.md        what comes next, in three tiers (+ Tier-1 build log)
+  websiteplan.md    the Vercel build plan (kept as a status doc)
+src/
+  common/           shared primitives: run-id policy, timestamps, evidence writers, coercion
+  scrape/           Stage 1 (CLI: python -m src.scrape); parsing/ = the split-out parsers
+  clean/            Stage 2 (python -m src.clean); score/frame/derive split out of core.py
+  store/            Stage 3 (python -m src.store); statements.py holds all SQL text
+sql/                schema.sql (idempotent DDL) + vercel_readonly_role.sql + migrations/
+dashboard/          views.sql, dax_measures.dax, build_guide.md, verify_contract.py
+site/               Next.js 15 presentation layer (5 pages, 5 JSON/CSV APIs, Vercel)
+scripts/
+  run_daily.py      daily orchestrator (used by GitHub Actions)
+  tier1_migration_check.{py,ps1}  one-off migration ladder against a real PG (.ps1 boots local PG18)
+  live_db_check.ps1 one-off live Postgres end-to-end check (Windows-only)
+tests/              pytest suite incl. contract↔schema parity tests; fixtures/ holds the data
+jobs/<run_id>/      every run's raw/cleaned data, manifests, and process logs — run evidence
+                    (see jobs/README.md: markdown evidence IS tracked; data dumps and
+                    screenshots are gitignored; every deletion is git-recoverable)
 ```
+
+Every code directory carries its own `README.md` (10–25 lines: what lives there,
+the one trap, pointers to each file's T0 header). They are generated by hand for
+the 2026-10-21 reorganisation — if this block and a directory disagree, the
+directory wins.
 
 ## Quickstart
 
-```powershell
-# Run these from the repo root (this folder).
+### POSIX (Linux / macOS)
 
-# 1. Python env (Python 3.14)
+```bash
+# Interpreter: conda env `off-market-radar`, used by literal path (no activation).
+# Why not venv: system Python 3.14 here ships without `ensurepip` — see
+# docs/decisions.md §6. Rebuild: ~/.anaconda3/bin/conda create -n off-market-radar python=3.14 pip -y
+PY=~/.anaconda3/envs/off-market-radar/bin/python
+
+# 1. Secrets (gitignored — never committed)
+cp config/dataimpulse.env.example config/dataimpulse.local.env  # fill in DataImpulse creds
+cp config/database.env.example    config/database.local.env     # fill in Neon DATABASE_URL
+
+# 2. Run the pipeline end to end
+$PY scripts/run_daily.py
+
+# Or stage by stage:
+$PY -m src.scrape --pages 5 --max-details 150 --out jobs/<run_id>/raw
+$PY -m src.clean  --in jobs/<run_id>/raw --out jobs/<run_id>/cleaned
+$PY -m src.store  --in jobs/<run_id>/cleaned
+
+# 3. Verify
+$PY -m pytest -q                  # 164 passed, 2 skipped (2026-10-22). The 2 skips are
+                                  # test_proxy_url_* / test_scrub_secrets_*: they need
+                                  # DATAIMPULSE_* credentials and run in CI, which has them.
+$PY dashboard/verify_contract.py  # 54/54, exit 0
+# scripts/*.ps1 are Windows-only; neither runs on this platform.
+```
+
+### Windows
+
+```powershell
+# Run these from the repo root (this folder). Python 3.14.
+
+# 1. Python env
 py -3 -m venv .venv
 .venv\Scripts\python.exe -m pip install -r requirements.txt
 
@@ -91,19 +146,58 @@ copy config\database.env.example    config\database.local.env      # fill in Neo
 .venv\Scripts\python.exe -m src.clean  --in jobs\<run_id>\raw --out jobs\<run_id>\cleaned
 .venv\Scripts\python.exe -m src.store  --in jobs\<run_id>\cleaned
 
-# Verify:
+# 4. Verify
 .venv\Scripts\python.exe -m pytest tests/ -q
-.venv\Scripts\python.exe dashboard/verify_contract.py
+.venv\Scripts\python.exe dashboard\verify_contract.py
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\live_db_check.ps1
 ```
 
-Apply `sql/schema.sql` then `dashboard/views.sql` to your Neon database once,
-then connect Power BI Desktop per `dashboard/build_guide.md`.
+Apply `sql/schema.sql` then `dashboard/views.sql` to your Neon database once
+(store re-applies the schema every run, so the first `python -m src.store` also
+does it), then connect Power BI Desktop per `dashboard/build_guide.md`.
+
+### The site
+
+```bash
+cd site
+npm install
+npm run typecheck && npm run build   # tsc --noEmit + next build
+npm run dev                          # localhost:3000
+```
+
+Known gap: `npm run lint` has no eslint dependency or config behind it yet, so
+it prompts/fails — use `npm run typecheck` as the gate.
 
 **Daily automation:** `.github/workflows/daily_pipeline.yml` (repo root — Actions
 only reads workflows from there) runs the whole pipeline on a cron. Create the six repository secrets listed in
 `docs/deploy_github.md` (`DATABASE_URL`, `DATAIMPULSE_*`). The repo never
 contains credentials or scraped data dumps — both stay out of git by design.
+
+## Site routes
+
+Five pages, five APIs, all SEO endpoints:
+
+| URL | Page | Data source |
+|---|---|---|
+| `/` | computed overview: `HeroStats` KPIs + compact `Explorer` + filter-responsive `InsightCards` (no hardcoded cards) | `/api/meta`, `/api/deals` |
+| `/map` | full explorer: MapLibre + supercluster map, filters, SideCard | `/api/deals`, `/api/meta` |
+| `/trends` | KPIs, `IngestionHealth`, 7 charts (`app/trends/charts/`), top-10 table | `/api/zips`, `/api/deals` |
+| `/data` | sortable/paginated call list + CSV export | `/api/deals` |
+| `/listing/[id]` | **new** shareable property page: price history, sparkline, shortlist | `/api/listing/[id]`, `/api/deals` |
+
+| API | Returns | Notes |
+|---|---|---|
+| `/api/deals` | filtered `{deals, live, …}` or CSV (≤5000 rows) | data backbone; recency guard on `max(snapshot_date)` |
+| `/api/health` | runs, coverage, `next_run_at` | ingestion-health card |
+| `/api/meta` | latest run + snapshot freshness | header strip |
+| `/api/zips` | per-ZIP daily trends | filter-independent |
+| `/api/listing/[id]` | one listing's price history | 400 on bad id; DB error → `200 unavailable` |
+
+Every API degrades to the frozen 82-row CSV with `live:false` when the DB is
+unreachable — never an error page (invariant I14, reader in
+`site/lib/fallback.ts`). `/robots.txt`, `/sitemap.xml`, `/icon.svg` and
+`/opengraph-image` are generated too; the sitemap enumerates the 82
+fallback-CSV listing ids (no `DATABASE_URL` exists at build time).
 
 ## Target city
 
@@ -121,24 +215,27 @@ city-agnostic (zip/lat-long drive the map).
   hygiene and geo-accuracy (verified US/New York exit), at 5s pacing between
   **all** requests (2.5x the contractual 2s floor kept in `src/scrape/cli.py`),
   capped volume, and full 429/Retry-After compliance — portfolio scale, not bulk.
-- **Daily volume**: 30 search pages + 120 detail pages per run (~150 requests —
-  the same load as the original 5-page/150-detail default). Because a search page
-  returns ~41 cards in one request while a detail page returns one listing in one
-  request, the budget is spent where it buys coverage: Zillow NYC reports ~22.8k
-  active listings, so a run samples roughly 5% of them — a deliberate, documented
-  ceiling, not a full-market scrape. The numbers live in one place: `DAILY_PAGES`,
+- **Daily volume**: 30 search pages + 120 detail pages per run — **150 requests
+  exactly**. The original default was 5 search + 150 detail = **155** requests;
+  `scripts/run_daily.py`'s policy comment calls the new budget "about the same
+  load", spent where it buys coverage: a search page returns ~41 cards in one
+  request while a detail page returns one listing in one request. Zillow NYC
+  reports ~22.8k active listings, so
+  a run samples roughly 5% of them — a deliberate, documented ceiling, not a
+  full-market scrape. The numbers live in one place: `DAILY_PAGES`,
   `DAILY_MAX_DETAILS`, `DAILY_DELAY` in `scripts/run_daily.py`, pinned by
   `tests/test_run_daily.py`.
 - **CAPTCHA is a hard stop**: any PerimeterX/CAPTCHA challenge aborts the run
   (manifest `status: failed`); the pipeline never attempts to defeat it.
 - **Evidence chain**: robots snapshots, per-run manifests, `pages_fetched.json`
-  audits, and process logs land in `jobs/` for every claim.
+  audits, and process logs land in `jobs/` for every claim (see
+  `jobs/README.md` for the keep-cited rule).
 
 ## Verification status
 
 | Stage | Status |
 |---|---|
-| 1. Scrape | ✅ live-proxy runs — **1,011 records** (30 pages, 120/120 details) via CI run `20261016-055515`; earlier 82-record smoke run `jobs/smoke-scrape-20261015-084632` |
+| 1. Scrape | ✅ live-proxy runs — **1,011 records** (30 pages, 120/120 details) via CI run `20261016-055515`; earlier 82-record smoke run `jobs/smoke-scrape-20261015-084632`. Note: CI runs leave **no `jobs/` evidence** — the runner's disk dies with it, so the CI run has no directory here by design; the numbers are recorded in this README and `docs/roadmap.md` |
 | 2. Clean | ✅ full pytest suite green; end-to-end on fixture verified |
 | 3. Store | ✅ live-PG unshimmed fix — `with conn.transaction()` per transaction, 31/31 live checks (`jobs/pg-fix-20261015-122253`) |
 | 4. Dashboard | ✅ sqlglot parse + DDL cross-check + DAX↔guide consistency (54 checks via `dashboard/verify_contract.py`) |
@@ -207,7 +304,9 @@ the tracked/High/source detail. Detail: `jobs/tier1-gate-fixes/evidence/gate-fix
 - Prove the migration against a real local PostgreSQL before touching production:
   `scripts/tier1_migration_check.ps1` (apply order, idempotency, the upgrade guard,
   the grant hazard, the cold-start gate, the history view vs the shipped query)
-- Test count is now **142** (`pytest tests/ -q`); `dashboard/verify_contract.py` 54/54.
+- Test count is now **164 passed, 2 skipped** (`python -m pytest -q`, re-verified
+  2026-10-22); `dashboard/verify_contract.py` 54/54. The 2 skips are the
+  DataImpulse-credential tests and run in CI.
 
 #### Deploy mechanics
 
@@ -373,4 +472,6 @@ is no retry-until-it-passes logic anywhere in the pipeline.
 
 *Honest gaps noted as they arise: see each stage's process log under `jobs/`
 and `dashboard/build_guide.md` Step 10 for GUI steps that can't be verified
-headlessly (Power BI visuals, Neon live connection).*
+headlessly (Power BI visuals, Neon live connection). Known open gaps are
+tracked in [ARCHITECTURE.md](ARCHITECTURE.md) §6 (unpinned invariants) and
+[REPO_MAP.md](REPO_MAP.md) §9–§10 (historical baseline).*

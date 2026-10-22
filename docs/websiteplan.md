@@ -82,7 +82,8 @@ Vercel Hobby (Next.js App Router, free *.vercel.app)
     src/scrape|clean|store/  (unchanged robot)
     sql/schema.sql, dashboard/ (unchanged analyst artifact)
     site/  (Vercel app root; the Vercel project points here)
-      app/(routes)/ lib/db.ts  app/api/*/  components/Map.client.tsx ...
+      app/(routes)/ lib/db.ts (formerly — since split into lib/db/)  app/api/*/
+      components/Map.client.tsx (formerly — shipped as components/listings/DealMap.tsx) ...
   ```
 
 ## 6. API shapes (from existing views — no new SQL needed)

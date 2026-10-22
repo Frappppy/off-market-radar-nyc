@@ -37,7 +37,7 @@ black-box model, no score the client cannot argue with.
 
 **Problem.** `vw_latest_listings` returns each listing's most recent snapshot with
 no recency filter, and `/api/deals` reads it unfiltered
-(`site/lib/db.ts`, `DEALS`). There is no `is_active` / `delisted_at` column in
+(`site/lib/db/deals-query.ts`, `DEALS_QUERY` — the query formerly in `site/lib/db.ts`). There is no `is_active` / `delisted_at` column in
 `sql/schema.sql`. So when a home sells or is delisted it simply stops receiving
 snapshots — and its last one stays on the map forever, indistinguishable from a
 live listing.
@@ -64,7 +64,8 @@ when a listing misses *N* consecutive runs, and expose it through
 **Bonus signal.** Listings *vanishing* from the feed is genuine market
 intelligence (sell-through / absorption). Worth capturing rather than discarding.
 
-Effort: **small**. Touches `site/lib/db.ts`, `dashboard/views.sql`,
+Effort: **small**. Touches `site/lib/db/` (formerly the single `site/lib/db.ts`),
+`dashboard/views.sql`,
 `sql/schema.sql`, and the map/data surface.
 
 ### 1.2 Property detail panel with real price history
@@ -133,7 +134,8 @@ preview deployments gated by Vercel Authentication. Mechanics and evidence:
 `README.md` § Deploy mechanics.
 
 **1.1 — stale listings + freshness.** The bug fix is a recency guard in
-`site/lib/db.ts` that keeps only the newest snapshot cohort. Measured on
+`site/lib/db/deals-query.ts` (formerly `site/lib/db.ts`) that keeps only the
+newest snapshot cohort. Measured on
 production: **1,019 → 1,011 rows**, the 8-row difference being the listings whose
 newest snapshot is not the newest cohort. Scope, stated honestly: those 8 are all
 `Low`, so the *default* map filter was never showing them; the inflation was in

@@ -21,7 +21,7 @@ and its grant were applied. The apply order and its measured results are below.
 | `pipeline_runs` | unchanged | ingestion health card (`1.4`) |
 
 The stale-listing fix itself (`1.1`) does **not** depend on any of this. It is a
-recency guard in `site/lib/db.ts` that keeps only the dataset's newest snapshot
+recency guard in `site/lib/db/deals-query.ts` (formerly `site/lib/db.ts`) that keeps only the dataset's newest snapshot
 cohort, so sold homes drop off the data surface. `is_active` is the *proper* fix
 and the foundation for Tier 2's "back on market" signal.
 
@@ -101,7 +101,7 @@ databases, and asserts against the real code paths:
 | C | a pre-Tier-1 database **rejects** the loader's real upsert (`42703`) until `sql/schema.sql`'s guard repairs it — then it succeeds (H3) |
 | D | **H1, reproduced**: re-applying `views.sql` really does drop the reader's `SELECT` on both existing views, spares `pipeline_runs`, and the four-object re-grant in step 3 restores every read |
 | E | the real `mark_stale_listings()` is a genuine no-op below `STALE_RUNS` successful runs, then deactivates exactly the listings that missed all N, is idempotent, and reactivates a returner |
-| F | `vw_listing_history` exposes exactly the column set the shipped `LISTING_HISTORY_QUERY` selects, and that query (extracted from `site/lib/db.ts`) runs and returns history oldest-first |
+| F | `vw_listing_history` exposes exactly the column set the shipped `LISTING_HISTORY_QUERY` selects, and that query (extracted from `site/lib/db/deals-query.ts`, formerly the single `site/lib/db.ts`) runs and returns history oldest-first |
 | G | `snapshot_date = max(snapshot_date)` excludes the older cohort and survives a *missed run* without emptying the map |
 
 Evidence lands in `jobs/<RunId>/evidence/assertions.txt`. Exit code 0 means every
