@@ -9,7 +9,8 @@ OUTPUTS:    ``build_proxy_url()`` (or ``None`` without credentials),
             ``proxy_display()`` (never contains credentials), ``scrub_secrets()``.
 CALLERS:    ``src.scrape.http`` (scrub), ``src.scrape.run`` (build),
             ``src.scrape.artifacts`` (display), ``tests/test_scrape.py``.
-TESTED BY:  ``tests/test_scrape.py::test_proxy_url_…``, ``::test_scrub_secrets_…``
+TESTED BY:  ``tests/test_scrape.py`` — ``test_proxy_url_uses_mandatory_geo*``
+            and ``test_scrub_secrets_masks_credentials`` (both in that file).
             (skip without credentials).
 """
 

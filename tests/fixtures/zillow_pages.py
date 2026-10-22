@@ -1,7 +1,7 @@
-"""Synthetic Zillow page fixtures shared by the scrape-stage tests.
-
-WHAT:      Static JSON/HTML embeddings shaped like real Zillow search and detail
-           pages, plus two builders that wrap them in the HTML a parser expects.
+"""WHAT:      Synthetic Zillow page fixtures shared by the scrape-stage tests --
+           static JSON/HTML embeddings shaped like real Zillow search and
+           detail pages, plus two builders that wrap them in the HTML a parser
+           expects.
 WHY:       The scrape tests must run fully offline -- no network, no proxy
            credentials, no recorded page dumps (the old `jobs/probe/*.html`
            scratch files were gitignored and no longer exist in the repo).
