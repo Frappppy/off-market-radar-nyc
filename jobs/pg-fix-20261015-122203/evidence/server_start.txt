@@ -1,5 +1,0 @@
-﻿waiting for server to start.... done
-server started
-
-
-

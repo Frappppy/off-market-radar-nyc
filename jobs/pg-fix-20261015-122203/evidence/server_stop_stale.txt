@@ -1,5 +1,0 @@
-﻿
-pg_ctl: PID file "C:/Users/omisg/AppData/Local/Temp/opencode/pglive/pgdata/postmaster.pid" does not exist
-Is server running?
-
-
