@@ -1,7 +1,21 @@
+// WHAT:   GET /api/meta — the freshness strip payload (Meta): latest snapshot
+//   date, last run's row count, and the snapshot-wide tracked/High totals.
+// WHY:    the header strip (components/status/Freshness) and the hero
+//   (HeroStats) need snapshot-global facts that /api/deals' filtered cohort
+//   cannot give. One query pair, one payload, so the header and the hero can
+//   never disagree. Falls back to the frozen sample (live:false) on DB error.
+// INPUTS: DATABASE_URL via lib/db/connection; no request params. Fallback
+//   branch reads public/data/listings_sample.csv via lib/fallback.
+// OUTPUTS: Meta JSON. The fallback's snapshot_date is the FIRST sample row's
+//   (a preserved divergence from /api/deals' max — see lib/dates.ts NOTE).
+// CALLERS: hooks/useMeta (Freshness, HeroStats, InsightCards).
+// Verified by: TS — Meta (lib/api-types.ts) is the one payload type every one
+//   of those readers parses, so they cannot disagree on shape or source.
 import { NextResponse } from "next/server";
-import { META_RUN_QUERY, META_SNAPSHOT_QUERY, getSql } from "@/lib/db";
+import { getSql } from "@/lib/db/connection";
+import { META_RUN_QUERY, META_SNAPSHOT_QUERY } from "@/lib/db/queries";
 import { loadFallbackDeals } from "@/lib/fallback";
-import type { Meta } from "@/lib/types";
+import type { Meta } from "@/lib/api-types";
 
 // Freshness strip: latest successful pipeline run + current snapshot totals.
 // Falls back to the bundled sample when Neon is unreachable (free-tier sleep).
@@ -28,6 +42,13 @@ export async function GET() {
     const deals = await loadFallbackDeals();
     const high = deals.filter((d) => d.motivation_score === "High").length;
     const body: Meta = {
+      // DIVERGENCE preserved on purpose: this fallback reports the FIRST
+      // fallback row's snapshot_date, NOT maxSnapshotDate(deals) as /api/deals
+      // and /api/health do (see lib/dates.ts NOTE). Rewiring it to the max
+      // could change the JSON whenever the frozen CSV is not newest-first, so
+      // the previous output is kept byte-for-byte.
+      // Verified by: NOTHING (gap) — no check pins the frozen branch's
+      //   first-row snapshot_date against a rewrite.
       snapshot_date: deals[0]?.snapshot_date ?? null,
       records_loaded: deals.length,
       source: "zillow",

@@ -1,8 +1,31 @@
+// WHAT:   GET /api/deals — parses the filter query params, builds the SQL via
+//   lib/db/deals-query (or filters the frozen CSV when Neon is unreachable),
+//   and answers with a DealsResponse JSON body or a CSV attachment.
+// WHY:    the one request path behind every explorer cohort (map pins, /data
+//   rows, /trends, the hero). Its parse() guards exist because of two live
+//   incidents: `min_dom=abc` reached SQL as `>= 'NaN'` (integer cast error)
+//   which the catch below answered with the FROZEN SAMPLE, and the old
+//   window_days=0 default pinned only the newest snapshot so "last seen N days
+//   ago" could never say anything but "today" (recency guard, roadmap 1.1).
+// INPUTS: query params — score (csv), min_dom, min_price, max_price, type,
+//   zip (csv), window_days, limit (≤5000), offset, format=csv; plus the
+//   DATABASE_URL via lib/db/connection, else public/data/listings_sample.csv.
+// OUTPUTS: DealsResponse JSON {deals, live, count, window_days,
+//   latest_snapshot_date} or `text/csv` attachment (up to 5000 rows).
+// CALLERS: hooks/useDeals (every page), the CSV export link on /data.
+// Verified by: /api/deals — min_dom parse guard, recency guard, limit ≤5000
+//   clamp (all three named at their own blocks below).
 import { NextResponse } from "next/server";
-import { applyFilters, type Deal, type DealsResponse, type FilterState } from "@/lib/types";
-import { buildDealsQuery, getSql } from "@/lib/db";
+import { applyFilters, type FilterState } from "@/lib/filters";
+import type { Deal, DealsResponse } from "@/lib/api-types";
+import { getSql } from "@/lib/db/connection";
+import { buildDealsQuery } from "@/lib/db/deals-query";
 import { loadFallbackDeals } from "@/lib/fallback";
+import { parseNum } from "@/lib/format";
+import { maxSnapshotDate } from "@/lib/dates";
+import { SCORES } from "@/lib/scores";
 
+// ---- parse(): the query-param guards (incident-driven, see WHY above) ----
 function parse(req: Request) {
   const u = new URL(req.url);
   const scores = (u.searchParams.get("score") ?? "High,Medium")
@@ -14,19 +37,20 @@ function parse(req: Request) {
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean);
-  const windowRaw = numOrNull(u.searchParams.get("window_days"));
+  const windowRaw = parseNum(u.searchParams.get("window_days"));
   return {
     scores,
-    // numOrNull, NOT bare Number(): `min_dom=abc` used to yield NaN, which
+    // parseNum, NOT bare Number(): `min_dom=abc` used to yield NaN, which
     // buildDealsQuery pushed into SQL (`days_on_market >= 'NaN'`) -> integer
     // cast error -> the catch below silently served the FROZEN SAMPLE for a
     // mere typo. Absent/empty -> null (no floor), unparseable -> null, so a
     // mistyped link can only ever widen, never swap the dataset. min_price and
     // window_days already went through this guard; min_dom was the odd one out.
-    minDom: numOrNull(minDomRaw),
+    // Verified by: /api/deals min_dom parse guard — parseNum → null, never NaN.
+    minDom: parseNum(minDomRaw),
     zips,
-    minPrice: numOrNull(u.searchParams.get("min_price")),
-    maxPrice: numOrNull(u.searchParams.get("max_price")),
+    minPrice: parseNum(u.searchParams.get("min_price")),
+    maxPrice: parseNum(u.searchParams.get("max_price")),
     type: u.searchParams.get("type"),
     // Recency guard (roadmap 1.1). DEFAULT 1, not 0: a 1-day window returns
     // the newest snapshot PLUS anything carried over from the run before it,
@@ -38,30 +62,17 @@ function parse(req: Request) {
     // An explicit `window_days=0` still means "newest snapshot only", and
     // buildDealsQuery clamps again, so anything negative/absurd degrades to a
     // safe value instead of reaching SQL.
+    // Verified by: /api/deals recency guard (default 1; 0 = newest only).
     windowDays: windowRaw == null ? 1 : Math.max(0, Math.floor(windowRaw)),
     limit: Math.min(Number(u.searchParams.get("limit") ?? 500) || 500, 5000),
     offset: Number(u.searchParams.get("offset") ?? 0) || 0,
   };
 }
-function numOrNull(v: string | null): number | null {
-  if (v == null || v === "") return null;
-  const n = Number(v);
-  return Number.isFinite(n) ? n : null;
-}
 
-// Newest snapshot_date across the returned rows — no extra query needed, and
-// it is the same value the recency guard anchored on. YYYY-MM-DD sorts
-// lexicographically, so a string max is exact.
-function maxSnapshotDate(deals: Deal[]): string | null {
-  let max = "";
-  for (const d of deals) {
-    if (d.snapshot_date && d.snapshot_date > max) max = d.snapshot_date;
-  }
-  return max || null;
-}
-
+// ---- GET: live SQL path → frozen-CSV fallback → JSON or CSV answer ----
 // CSV export uses the same query path (?format=csv, up to 5k rows) so the
 // download is exactly the filtered view — see websiteplan §6.
+// Verified by: NOTHING (gap) — no check compares the CSV body to the JSON view.
 export async function GET(req: Request) {
   const q = parse(req);
   const u = new URL(req.url);
@@ -87,7 +98,7 @@ export async function GET(req: Request) {
     live = false;
     const all = await loadFallbackDeals();
     const f: FilterState = {
-      score: (q.scores.length > 0 ? q.scores : ["High", "Medium", "Low"]) as FilterState["score"],
+      score: (q.scores.length > 0 ? q.scores : [...SCORES]) as FilterState["score"],
       minDom: q.minDom ?? 0,
       minPrice: q.minPrice,
       maxPrice: q.maxPrice,
@@ -101,8 +112,11 @@ export async function GET(req: Request) {
     // the same silent-stale-cohort bug the recency guard exists to prevent.
     // window_days >= 1 (the /api/deals default) takes the whole sample, which
     // for a single-snapshot CSV is every row, so every fallback listing
-    // honestly reports "last seen today".
-    const newest = all.reduce((m, d) => (d.snapshot_date && d.snapshot_date > m ? d.snapshot_date : m), "");
+    // honestly reports "last seen today". maxSnapshotDate() answers "" -> null,
+    // which the `newest ?` guard below reads exactly as the old `""` reduce did.
+    // Verified by: /api/deals fallback recency parity (same maxSnapshotDate
+    //   rule as the live path).
+    const newest = maxSnapshotDate(all);
     const cohort = q.windowDays <= 0 && newest ? all.filter((d) => d.snapshot_date === newest) : all;
     const filtered = applyFilters(cohort, f);
     deals = wantCsv ? filtered.slice(0, 5000) : filtered.slice(q.offset, q.offset + q.limit);

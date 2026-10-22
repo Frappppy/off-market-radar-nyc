@@ -1,14 +1,29 @@
+// WHAT:   the filter store — useFilters() (FilterState from the URL + a
+//   set/reset writer), toDealsQuery() (the /api/deals query string) and the
+//   S8 filterNotices() disclosure helpers.
+// WHY:    one place owns the score/min_dom/price/type/zip param semantics that
+//   the UI and the API must both read the same way (the D1/D2 empty-vs-absent
+//   rules and the S8 typo-disclosure WHY are in the blocks below). The F1 note
+//   above the import explains why this reads the store instead of
+//   useSearchParams().
+// INPUTS: the URL query string via useUrlSearch; next/navigation's router and
+//   pathname for writes.
+// OUTPUTS: [state, set, reset]; the canonical deals query string; the notice
+//   list the filter panels render.
+// CALLERS: app/{page via CompactExplorer, data, trends}, components/explorer/*
+//   and components/filters/FilterNotices.tsx.
 "use client";
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useMemo } from "react";
-import { DEFAULT_FILTERS, type FilterState, type MotivationScore } from "@/lib/types";
+import { DEFAULT_FILTERS, type FilterState } from "@/lib/filters";
+import type { MotivationScore } from "@/lib/api-types";
+import { SCORES } from "@/lib/scores";
 // F1 — `useSearchParams()` here is what made every route ship
 // BAILOUT_TO_CLIENT_SIDE_RENDERING. See lib/useUrlSearch.ts for the mechanism
 // and the CLS number it caused; this is a drop-in read of the same params.
 import { setUrlSearch, useUrlSearch } from "@/lib/useUrlSearch";
 
-const SCORES: MotivationScore[] = ["High", "Medium", "Low"];
-const isScore = (s: string): s is MotivationScore => (SCORES as string[]).includes(s);
+const isScore = (s: string): s is MotivationScore => (SCORES as readonly string[]).includes(s);
 
 // Empty-selection semantics (roadmap 1.3, defect D1): the `score` param is
 // ABSENT on a fresh link → nobody has chosen yet → the defaults (High+Medium).
@@ -18,6 +33,8 @@ const isScore = (s: string): s is MotivationScore => (SCORES as string[]).includ
 // motivation_score WHERE clause (an unknown token such as `score=Bogus` also
 // collapses to [] on both sides). So `toDealsQuery` must always emit the param,
 // empty included — omitting it would silently mean "defaults", not "all".
+// Verified by: /api/deals score-param parity — the route maps "" to [] exactly
+//   as documented; the client mirror above is TS-checked by isScore.
 export function useFilters(): [
   FilterState,
   (patch: Partial<FilterState>, extra?: Record<string, string | null>) => void,
@@ -35,6 +52,8 @@ export function useFilters(): [
     // the API, which reads an empty min_dom as "no DOM floor". Anything
     // unparseable (`min_dom=abc`) → default, so a mistyped link cannot silently
     // WIDEN the filter — while a legitimate `min_dom=0` stays 0.
+    // Verified by: NOTHING (gap) — the empty-vs-default half is unkeyed; the
+    //   disclosed typo path is Filters.lastStop.cls.
     const rawDom = sp.get("min_dom");
     const minDom =
       rawDom === null
@@ -97,6 +116,8 @@ export function useFilters(): [
 // `window_days` is deliberately NOT written: absent is the API's own default
 // (1 = the newest snapshot plus the run before it), and this query string is
 // also what the pages hand to /api/deals for their own fetches.
+// Verified by: /api/deals recency guard — the absent→1 default is asserted
+//   at the route, and this writer never overrides it.
 export function toDealsQuery(f: FilterState, extra?: Record<string, string>): string {
   const p = new URLSearchParams();
   p.set("score", f.score.join(","));
@@ -117,6 +138,9 @@ export function toDealsQuery(f: FilterState, extra?: Record<string, string>): st
 // unchanged (see the D1/D2 notes above); these helpers exist so the filter
 // panel can say what it did with the input instead of leaving the reader to
 // guess. Pure functions, so the same wording is used on every page.
+// Verified by: shots/phase3-runtime-gate.json → data_keyboard.lastStop.cls —
+//   a typo'd link's disclosure is asserted on /data; the wording itself is
+//   NOTHING (gap).
 
 const SCORE_HINT = "High / Medium / Low";
 
@@ -125,14 +149,16 @@ export interface FilterNotice {
   text: string;
 }
 
-/** Score tokens the reader sent that are not High/Medium/Low. */
-export function unrecognisedScores(raw: string | null): string[] {
+/** Score tokens the reader sent that are not High/Medium/Low. Module-local —
+ *  only `filterNotices` below reads it (REPO_MAP §8.2 over-exports). */
+function unrecognisedScores(raw: string | null): string[] {
   if (raw == null) return [];
   return raw.split(",").map((s) => s.trim()).filter((s) => s !== "" && !isScore(s));
 }
 
-/** The raw `min_dom` value when it was present but not a usable number. */
-export function unrecognisedMinDom(raw: string | null): string | null {
+/** The raw `min_dom` value when it was present but not a usable number.
+ *  Module-local — only `filterNotices` below reads it. */
+function unrecognisedMinDom(raw: string | null): string | null {
   if (raw == null || raw.trim() === "") return null;
   return Number.isFinite(Number(raw)) ? null : raw.trim();
 }

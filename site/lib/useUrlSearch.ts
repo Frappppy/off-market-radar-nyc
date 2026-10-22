@@ -1,6 +1,20 @@
+// WHAT:   the URL-query external store — useUrlSearch() (read-only
+//   useSearchParams equivalent), useUrlSearchReady() (the `ready` gate) and
+//   setUrlSearch() (write-back after router.replace).
+// WHY:    see the F1 block below for the full mechanism and the two measured
+//   incidents (the BAILOUT_TO_CLIENT_SIDE_RENDERING shell / 0.55808 CLS, and
+//   the deep-link race that overwrote a filtered cohort).
+// INPUTS: window.location.search (folded in on subscribe and on popstate);
+//   caller-written query strings via setUrlSearch.
+// OUTPUTS: a URLSearchParams view of the current search, the boolean `ready`,
+//   and the store write. Server snapshot is the constant { "", false } so SSR
+//   and hydration always agree.
+// CALLERS: lib/useFilters.ts, hooks/*, app/data/page.tsx,
+//   components/{filters/FilterNav,filters/FilterNotices,explorer/*}.
 "use client";
 import { useMemo, useSyncExternalStore } from "react";
 
+// ---- URL-query external store (useSearchParams bailout replacement) ----
 // F1 — why this exists instead of `useSearchParams()`.
 //
 // `useSearchParams()` from next/navigation tells Next.js the page cannot be
@@ -12,6 +26,8 @@ import { useMemo, useSyncExternalStore } from "react";
 // footer sat inside the first 390px screen and then left it when hydration
 // inserted the real page — a 0.55808 layout shift on three routes, byte for
 // byte (jobs/tier1-cls-diagnosis/evidence/cls-diagnosis.md §3.1).
+// Verified by: NOTHING (gap) — the CLS numbers live in the evidence file; no
+// runtime key re-measures the CSR bailout shell.
 //
 // This module keeps the same read/write ergonomics without the opt-out: a
 // tiny external store seeded from `window.location.search`. The server render
@@ -34,6 +50,8 @@ import { useMemo, useSyncExternalStore } from "react";
 // spurious request AND the race window in one move. The store's state is a
 // single cached object so `getSnapshot` stays referentially stable (a fresh
 // object every call would loop React).
+// Verified by: NOTHING (gap) — nothing renders a deep-linked /trends filter
+//   twice to prove the 133-vs-43 race stays gone.
 type UrlSearchState = { search: string; ready: boolean };
 
 let state: UrlSearchState = { search: "", ready: false };
@@ -76,6 +94,7 @@ const getSnapshot = () => state;
 // Used by the server render and by the hydration render, which must match it.
 // `ready: false` is deliberate: the first client render must equal the server
 // render, and `ready` is what tells the pages that it did not.
+// Verified by: TS — useSyncExternalStore contract; SERVER_STATE is constant.
 const SERVER_STATE: UrlSearchState = { search: "", ready: false };
 const getServerSnapshot = () => SERVER_STATE;
 
@@ -88,8 +107,9 @@ export function setUrlSearch(search: string) {
   setState({ search: search.replace(/^\?/, ""), ready: true });
 }
 
-/** The whole store state: the query string plus whether it is the live one. */
-export function useUrlSearchState(): UrlSearchState {
+/** The whole store state: the query string plus whether it is the live one.
+ *  Module-local (REPO_MAP §8.2 over-exports): only the two hooks below read it. */
+function useUrlSearchState(): UrlSearchState {
   return useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
 }
 

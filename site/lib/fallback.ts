@@ -1,10 +1,21 @@
-// Frozen CSV fallback — server-only. Bundled demo sample so the site stays
-// useful when Neon sleeps (free-tier cold start) or DATABASE_URL is unset.
-// Source: jobs/smoke-scrape-20261015-084632/cleaned/listings_2026-10-15.csv
-// (82 live-proxy records), copied to public/data/listings_sample.csv.
+// WHAT:   the frozen CSV fallback — parses public/data/listings_sample.csv
+//   into Deal[] (loadFallbackDeals) and derives one-point-per-ZIP trends from
+//   it (loadFallbackTrends). Server-only.
+// WHY:    Neon sleeps on the free tier and DATABASE_URL may be unset; without
+//   this the whole site would 500 instead of serving a clearly-labelled frozen
+//   sample. Source: jobs/smoke-scrape-20261015-084632/cleaned/
+//   listings_2026-10-15.csv (82 live-proxy records), copied to public/data/.
+//   The result is cached in-module: every route that falls back must see the
+//   SAME rows, and the file is read once per process.
+// Verified by: NOTHING (gap) — nothing compares two routes' fallback rows.
+// INPUTS: public/data/listings_sample.csv (header row + RFC-4180-ish lines).
+// OUTPUTS: Promise<Deal[]> (memoised) and Promise<ZipTrend[]> (derived).
+// CALLERS: app/api/{deals,health,meta,zips}/route.ts and app/sitemap.ts.
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { Deal, MotivationScore, ZipTrend } from "./types";
+import { parseNum } from "./format";
+import { SCORES } from "./scores";
+import type { Deal, MotivationScore, ZipTrend } from "./api-types";
 
 function splitCsvLine(line: string): string[] {
   const out: string[] = [];
@@ -36,11 +47,6 @@ function splitCsvLine(line: string): string[] {
   return out;
 }
 
-const num = (v: string): number | null => {
-  if (v == null || v === "") return null;
-  const n = Number(v);
-  return Number.isFinite(n) ? n : null;
-};
 const str = (v: string): string | null => (v == null || v === "" ? null : v);
 
 let cache: Deal[] | null = null;
@@ -56,20 +62,22 @@ export async function loadFallbackDeals(): Promise<Deal[]> {
   for (let i = 1; i < lines.length; i++) {
     const c = splitCsvLine(lines[i]);
     const score = c[idx("motivation_score")] as MotivationScore;
-    if (!["High", "Medium", "Low"].includes(score)) continue;
+    // Verified by: TS — SCORES.includes drops unknown scores before they
+    //   reach the Deal[], so the MotivationScore cast is only a narrowing.
+    if (!SCORES.includes(score)) continue;
     deals.push({
       source: c[idx("source")] || "zillow",
       listing_id: c[idx("listing_id")],
       address: str(c[idx("address_raw")]),
       city: str(c[idx("city")]),
       zip: str(c[idx("zip")]),
-      latitude: num(c[idx("latitude")]),
-      longitude: num(c[idx("longitude")]),
+      latitude: parseNum(c[idx("latitude")]),
+      longitude: parseNum(c[idx("longitude")]),
       property_type: str(c[idx("property_type")]),
-      price: num(c[idx("price_current")]),
-      days_on_market: num(c[idx("days_on_market")]) as number | null,
-      price_per_sqft: num(c[idx("price_per_sqft")]),
-      price_drop_pct: num(c[idx("price_drop_pct")]),
+      price: parseNum(c[idx("price_current")]),
+      days_on_market: parseNum(c[idx("days_on_market")]) as number | null,
+      price_per_sqft: parseNum(c[idx("price_per_sqft")]),
+      price_drop_pct: parseNum(c[idx("price_drop_pct")]),
       motivation_score: score,
       motivation_reason: str(c[idx("motivation_reason")]),
       snapshot_date: c[idx("snapshot_date")] || "",
@@ -80,8 +88,10 @@ export async function loadFallbackDeals(): Promise<Deal[]> {
   return deals;
 }
 
+// ---- frozen CSV fallback: Deal[] + demo ZIP trends from one sample ----
 // Single-snapshot sample → one trend point per zip (demo only; live Neon
 // accumulates the real 30-day series via vw_zip_price_drop_30d).
+// Verified by: NOTHING (gap) — the derived point-per-zip shape is unkeyed.
 export async function loadFallbackTrends(): Promise<ZipTrend[]> {
   const deals = await loadFallbackDeals();
   const byZip = new Map<string, { sum: number; n: number; count: number; date: string }>();

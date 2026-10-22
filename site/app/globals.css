@@ -38,6 +38,8 @@
 
 :root {
   color-scheme: dark;
+  /* Score hues — the CSS mirror of SCORE_COLORS in lib/scores.ts (CSS cannot
+     import TypeScript): keep the two in sync. */
   --high: #d62728;
   --medium: #e6a817;
   --low: #9aa0a6;
