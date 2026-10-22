@@ -54,7 +54,8 @@ class ArtifactsMixin:
     def _write_pages_fetched(self) -> Path:
         path = self.out_dir / "pages_fetched.json"
         path.write_text(
-            json.dumps(self._audit(), indent=2) + "\n", encoding="utf-8"
+            json.dumps(self._audit(), indent=2) + "\n", encoding="utf-8",
+            newline="\n"
         )
         return path
 
@@ -74,7 +75,8 @@ class ArtifactsMixin:
 
     def _write_manifest(self) -> Path:
         path = self.out_dir / "manifest.json"
-        path.write_text(json.dumps(self._manifest(), indent=2) + "\n", encoding="utf-8")
+        path.write_text(json.dumps(self._manifest(), indent=2) + "\n", encoding="utf-8",
+                        newline="\n")
         return path
 
     def _process_log(self) -> str:
@@ -149,7 +151,7 @@ class ArtifactsMixin:
 
     def _write_process_log(self) -> Path:
         path = self.out_dir / "process_log.md"
-        path.write_text(self._process_log(), encoding="utf-8")
+        path.write_text(self._process_log(), encoding="utf-8", newline="\n")
         return path
 
     def _finalize(self, status: str, reason: str | None) -> None:

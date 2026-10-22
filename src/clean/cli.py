@@ -159,6 +159,7 @@ def main(argv: list[str] | None = None) -> int:
                 fallback_note=fallback_note,
             ),
             encoding="utf-8",
+            newline="\n",
         )
         print(
             f"clean: {stats.records_out} records -> {parquet_path} "

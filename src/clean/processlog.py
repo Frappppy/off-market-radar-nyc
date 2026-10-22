@@ -155,7 +155,8 @@ def _write_failure_artifacts(out_dir: Path, run_id: str, started_at: str, input_
         )
         write_manifest(out_dir, manifest)
         (out_dir / "process_log.md").write_text(
-            _failed_log(run_id, started_at, input_path, error), encoding="utf-8"
+            _failed_log(run_id, started_at, input_path, error), encoding="utf-8",
+            newline="\n"
         )
     except OSError:
         pass  # best effort only — the primary error is already reported

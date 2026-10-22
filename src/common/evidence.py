@@ -35,12 +35,17 @@ def iso(dt: datetime | None) -> str | None:
 
 def write_manifest(out_dir: Path, payload: dict) -> Path:
     path = out_dir / "manifest.json"
-    path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    # newline="\n": the manifest's bytes are a cross-platform contract (the
+    # byte-pin in tests/test_common.py; LF everywhere). Text-mode default on
+    # Windows translates to CRLF, which broke that pin in CI (checks run
+    # d4ac21f-era, tests/test_common.py::test_write_manifest_bytes).
+    path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8",
+                    newline="\n")
     return path
 
 
 def append_log(log_path: Path, text: str | list[str]) -> None:
     if isinstance(text, list):
         text = "\n".join(str(line) for line in text)
-    with log_path.open("a", encoding="utf-8") as fh:
+    with log_path.open("a", encoding="utf-8", newline="\n") as fh:
         fh.write(text.rstrip("\n") + "\n")
