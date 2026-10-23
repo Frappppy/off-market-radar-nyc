@@ -133,7 +133,10 @@ export default function CompactExplorer() {
             className="h-6 w-28"
           />
         </label>
-        <span className="text-xs text-zinc-400">
+        {/* The pool is the newest daily scan, not the ledger — stated in the
+            title (zero-width on a strip where visible text would wrap the row).
+            Verified by: NOTHING (gap) — copy-level, no runtime key. */}
+        <span className="text-xs text-zinc-400" title="The pool is the newest daily scan's listings — homes sell or delist, so it moves daily; the full ledger only grows.">
           {deals.length} of {total ?? "…"} shown
         </span>
         <button className="tap text-xs text-zinc-400 underline" onClick={resetFilters}>Reset</button>

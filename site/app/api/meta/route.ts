@@ -35,6 +35,10 @@ export async function GET() {
       run_id: (run.run_id as string) ?? null,
       live: true,
       total_tracked: snap.total_tracked != null ? Number(snap.total_tracked) : null,
+      // The ledger (every listing ever ingested) beside the daily cohort, so
+      // no reader mistakes the moving cohort for a shrinking database.
+      total_ever_tracked:
+        snap.total_ever_tracked != null ? Number(snap.total_ever_tracked) : null,
       high_count: snap.high_count != null ? Number(snap.high_count) : null,
     };
     return NextResponse.json(body);
@@ -55,6 +59,9 @@ export async function GET() {
       run_id: "frozen-sample",
       live: false,
       total_tracked: deals.length,
+      // In the frozen world the sample IS the whole ledger — one bundled day,
+      // no history — so cohort and total are honestly the same number.
+      total_ever_tracked: deals.length,
       high_count: high,
     };
     return NextResponse.json(body);

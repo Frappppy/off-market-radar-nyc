@@ -51,7 +51,8 @@ export interface Meta {
   source: string;
   run_id: string | null;
   live: boolean; // false = frozen CSV fallback (Neon unreachable/sleeping)
-  total_tracked: number | null;
+  total_tracked: number | null; // newest-day cohort: listings seen in the last scrape
+  total_ever_tracked: number | null; // ledger: every listing ever ingested (only grows)
   high_count: number | null;
 }
 
@@ -98,7 +99,8 @@ export interface Health {
   runs_failed_30d: number | null;
   latest_snapshot_date: string | null;
   snapshot_days: number | null; // history depth = distinct snapshot dates
-  tracked: number | null; // newest-snapshot cohort
+  tracked: number | null; // newest-snapshot cohort: this day's scan only
+  total_ever_tracked: number | null; // every listing ever ingested (only grows)
   market_reference: number; // MARKET_REFERENCE.listings disclosure denominator
   coverage_pct: number | null; // tracked / market_reference * 100, one decimal
 }

@@ -42,7 +42,18 @@ export default function HeroStats() {
   const scope = coverageNote(meta?.total_tracked);
 
   const stats: Array<[string, string, string]> = [
-    ["Tracked", meta?.total_tracked != null ? fmtCount(meta.total_tracked) : "…", scope ?? `snapshot ${meta?.snapshot_date ?? "—"}`],
+    // "Tracked today" is deliberate: the value is the newest daily scan's
+    // cohort (see lib/db/queries.ts), which moves up and down as homes sell or
+    // leave the feed — never the size of the database. The total- ever-seen
+    // figure sits in the note so the two can never be conflated.
+    // Verified by: TS — meta.total_tracked / total_ever_tracked (Meta type).
+    [
+      "Tracked today",
+      meta?.total_tracked != null ? fmtCount(meta.total_tracked) : "…",
+      meta?.total_ever_tracked != null
+        ? `${scope ?? `snapshot ${meta?.snapshot_date ?? "—"}`} · ${fmtCount(meta.total_ever_tracked)} in total`
+        : scope ?? `snapshot ${meta?.snapshot_date ?? "—"}`,
+    ],
     ["High motivation", high != null ? fmtCount(high) : "…", pctHigh != null ? `${pctHigh}% of tracked` : "score = High"],
     ["Avg price drop", avgDrop != null ? fmtPct(avgDrop) : "—", "across listings with a cut"],
     ["Avg DOM", avgDom != null ? String(Math.round(avgDom)) : "—", "days on market"],

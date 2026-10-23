@@ -69,6 +69,7 @@ export default function IngestionHealth() {
   const finished = fmtWhen(lastOk?.finished_at);
   const next = fmtWhen(health?.next_run_at);
   const tracked = health?.tracked ?? null;
+  const totalEver = health?.total_ever_tracked ?? null;
   const pct = health?.coverage_pct ?? null;
   const ok = health?.runs_ok_30d ?? null;
   const failed = health?.runs_failed_30d ?? null;
@@ -97,14 +98,14 @@ export default function IngestionHealth() {
         : `cron ${CRON_SCHEDULE} (UTC)`,
     },
     {
-      label: "Coverage (sample)",
+      label: "Today's scan (sample)",
       value: loading ? "…" : tracked != null ? `${fmtCount(tracked)} of ${marketSizeLabel}` : "—",
       note: loading
         ? "counting the newest snapshot…"
         : pct != null
-          ? `${fmtPct(pct)} of ${MARKET_REFERENCE.label} — a sample`
+          ? `${fmtPct(pct)} of ${MARKET_REFERENCE.label} — a sample${totalEver != null ? ` · ${fmtCount(totalEver)} in total` : ""}`
           : "sample size unknown",
-      title: `Disclosure denominator: ${fmtCount(MARKET_REFERENCE.listings)} ${MARKET_REFERENCE.label} as of ${MARKET_REFERENCE.as_of} — our ingestion is capped on purpose, so this is a slice of the market`,
+      title: `The newest day's scan only — homes sell or delist, so this number moves daily. Disclosure denominator: ${fmtCount(MARKET_REFERENCE.listings)} ${MARKET_REFERENCE.label} as of ${MARKET_REFERENCE.as_of} — our ingestion is capped on purpose, so this is a slice of the market`,
     },
     {
       label: "Runs · last 30 days",
@@ -188,10 +189,15 @@ export default function IngestionHealth() {
         ))}
       </dl>
       {/* Constant text — identical while loading and after; wording disjoint
-          from page copy. Verified by: NOTHING (gap) — no key compares copy. */}
+          from page copy. The second sentence is the one a returning reader
+          needs: the daily number moves because the feed moves, and only the
+          total is cumulative. Verified by: NOTHING (gap) — no key compares
+          copy. */}
       <p className="mt-2 border-t border-white/10 pt-2 text-[11px] leading-snug text-zinc-500">
         Not full coverage: the denominator is {marketSizeLabel} {MARKET_REFERENCE.label}; the ingest
         is capped by design — robots-allowed paths, 5 s pacing, hard stop on any CAPTCHA.
+        “Today's scan” moves daily as homes sell or delist; “in total” counts every
+        listing ever ingested and only grows.
       </p>
     </section>
   );

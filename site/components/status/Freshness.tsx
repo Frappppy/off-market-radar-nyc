@@ -1,5 +1,8 @@
 // WHAT:   the header's data-freshness strip — "Data as of <date>", the frozen
-//   pill when live:false, and (from lg up) the tracked/High/source detail.
+//   pill when live:false, and (from lg up) the today's-scan / total / High /
+//   source detail. "tracked today" names the newest daily cohort; the "in
+//   total" figure beside it is the ever-seen ledger, so the daily number can
+//   never be read as a database size.
 // WHY:    the reader must know at a glance whether they see live Neon data or
 //   the frozen fallback. The width/CLS reasoning (F6) is in the block below;
 //   the wrapper in app/layout.tsx caps the box so no future string can reflow
@@ -56,10 +59,15 @@ export default function Freshness() {
         </span>
       )}
       {/* detail only where there is room; the hero repeats these numbers.
-          Verified by: NOTHING (gap) — the lg threshold is measurement-set,
-          not asserted at runtime. */}
-      <span className="hidden lg:inline">
-        {" · "}{meta.total_tracked != null ? fmtCount(meta.total_tracked) : "—"} tracked (sample) · {meta.high_count != null ? fmtCount(meta.high_count) : "—"} High · source {meta.source}
+          "tracked today" names the cohort (the newest daily scan, which moves
+          as homes sell or delist) and the total beside it is the ever-seen
+          ledger, so a reader can never take the daily figure for a database
+          size. Verified by: NOTHING (gap) — the lg threshold is
+          measurement-set, not asserted at runtime. */}
+      <span className="hidden lg:inline" title="Tracked today = listings in the newest daily scan · in total = every listing ever ingested (only grows)">
+        {" · "}{meta.total_tracked != null ? fmtCount(meta.total_tracked) : "—"} tracked today (sample)
+        {meta.total_ever_tracked != null ? ` · ${fmtCount(meta.total_ever_tracked)} in total` : ""}
+        {" · "}{meta.high_count != null ? fmtCount(meta.high_count) : "—"} High · source {meta.source}
       </span>
       {frozen && (
         <span className="ml-1 hidden rounded bg-amber-100 px-1 text-amber-800 lg:inline">

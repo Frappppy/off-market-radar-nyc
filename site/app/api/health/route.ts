@@ -89,6 +89,10 @@ export async function GET() {
       latest_snapshot_date: (r.latest_snapshot_date as string) ?? null,
       snapshot_days: parseNum(r.snapshot_days),
       tracked,
+      // The ledger beside the cohort: every listing ever ingested (upsert-only
+      // store, so this only grows) — the two numbers together are what make
+      // "989 today" readable as a daily scan rather than a database size.
+      total_ever_tracked: parseNum(r.total_ever_tracked),
       market_reference,
       coverage_pct: coveragePct(tracked),
     };
@@ -113,6 +117,9 @@ export async function GET() {
       //   sample has no history depth to report).
       snapshot_days: null,
       tracked,
+      // Same honesty as the meta route's frozen branch: the bundled sample is
+      // both the day's cohort and the entire visible ledger.
+      total_ever_tracked: tracked,
       market_reference,
       coverage_pct: coveragePct(tracked),
     };

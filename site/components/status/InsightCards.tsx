@@ -18,6 +18,9 @@
 // Verified by: shots/phase3-runtime-gate.json → home_insights.default,
 //   home_insights.scoreHigh_dom0, home_insights.respondToFilters — the cards'
 //   computed strings are asserted, and the cohort moves when filters move.
+//   NOTE: those keys capture the phase-3 strings; the cohort-vs-ledger
+//   sentence added to the third card afterwards is not in them (it is
+//   copy-level, and the gate was not re-run for it).
 
 import { useMemo } from "react";
 import { useDeals } from "@/hooks/useDeals";
@@ -90,7 +93,14 @@ export default function InsightCards() {
       title: "Capped on purpose, not broken",
       body:
         (scope != null ? `${scope}. ` : meta == null ? "… " : "No snapshot yet. ") +
-        "The ingest follows robots-allowed paths at 5s pacing and hard-stops on any CAPTCHA, so this is a sample of NYC actives rather than full-market coverage.",
+        "The ingest follows robots-allowed paths at 5s pacing and hard-stops on any CAPTCHA, so this is a sample of NYC actives rather than full-market coverage." +
+        // Cohort vs ledger, stated in prose on the landing page itself: the
+        // tracked count a reader sees is the newest day's scan, which moves as
+        // homes sell or delist — only the ever-seen total is cumulative.
+        // Verified by: NOTHING (gap) — copy-level; the runtime gate predates it
+        //   (its home_insights keys capture the phase-3 strings, before this
+        //   sentence existed).
+        " The tracked count is the newest day's scan; the full ledger only grows.",
     },
   ];
 

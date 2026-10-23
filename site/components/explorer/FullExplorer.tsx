@@ -55,6 +55,10 @@ export default function FullExplorer() {
               Verified by: NOTHING (gap) — no key measures this hint's
               contrast; the 2.58:1 figure is QA-sweep evidence. */}
           <span className="text-zinc-500"> · click a pin for the deal card</span>
+          {/* The pool is the newest daily scan, not the ledger — named so the
+              denominator can never be read as "listings we have ever had".
+              Verified by: NOTHING (gap) — copy-level, no runtime key. */}
+          <span className="text-zinc-500"> · pool = newest daily scan</span>
         </p>
       </div>
       <div className="grid items-start gap-3 lg:grid-cols-[300px_1fr]">

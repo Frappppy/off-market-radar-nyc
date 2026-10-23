@@ -29,7 +29,8 @@ export const META_RUN_QUERY = `
 
 export const META_SNAPSHOT_QUERY = `
   SELECT snapshot_date::text AS snapshot_date, COUNT(*) AS total_tracked,
-         COUNT(*) FILTER (WHERE motivation_score = 'High') AS high_count
+         COUNT(*) FILTER (WHERE motivation_score = 'High') AS high_count,
+         (SELECT count(*)::int FROM vw_latest_listings) AS total_ever_tracked
   FROM vw_latest_listings
   GROUP BY snapshot_date
   ORDER BY snapshot_date DESC
@@ -63,9 +64,12 @@ export const LISTING_HISTORY_QUERY = `
 // `tracked` is the newest-snapshot cohort, not the whole view: vw_latest_listings
 // keeps one row per listing EVER seen, so count(*) over it includes stale and
 // delisted homes and would overstate coverage. This matches META_SNAPSHOT_QUERY
-// above. `last_success` / `last_failure` come back as JSON objects or null when
-// no such run exists. Status values are the schema's own: running | success |
-// failed.
+// above. `total_ever_tracked` is that whole-view count on purpose — the ledger
+// of every listing ever ingested (upsert-only, so it only grows) — so the card
+// can show "today's scan" beside "tracked in total" and a reader never mistakes
+// the moving daily cohort for a shrinking database. `last_success` /
+// `last_failure` come back as JSON objects or null when no such run exists.
+// Status values are the schema's own: running | success | failed.
 // Verified by: /api/health newest-snapshot-cohort invariant — `tracked` counts
 //   the max(snapshot_date) day only, never the whole ever-seen view.
 export const HEALTH_QUERY = `
@@ -96,5 +100,6 @@ export const HEALTH_QUERY = `
        FROM vw_latest_listings) AS latest_snapshot_date,
     (SELECT count(*)::int FROM vw_latest_listings
       WHERE snapshot_date = (SELECT max(snapshot_date)
-                               FROM vw_latest_listings)) AS tracked
+                               FROM vw_latest_listings)) AS tracked,
+    (SELECT count(*)::int FROM vw_latest_listings) AS total_ever_tracked
 `;
