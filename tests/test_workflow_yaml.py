@@ -2,12 +2,14 @@
            root, references exactly the six allowed GitHub secrets (no leaked
            connection strings or values), keeps its cron and workflow_dispatch
            triggers, and invokes scripts/run_daily.py with the venv interpreter;
-           checks.yml (below) keeps its five gates and its credential-free run.
+           checks.yml (below) keeps its five gates and its credential-free run,
+           and the interpreter it pins is the interpreter pyproject.toml tells
+           mypy and ruff to assume.
 WHY:       The workflow holds the only production credentials in the repo; a
            leak or a silently edited stage would go unnoticed until the next
            10:00 UTC run. Parsed as text — no Actions runner needed.
 INPUTS:    .github/workflows/{daily_pipeline,checks}.yml + requirements-dev.txt
-           (raw text only).
+           + requirements.txt + pyproject.toml (raw text/tomllib only).
 OUTPUTS:   pytest verdicts only.
 CALLERS:   `python -m pytest` — the suite count lives in tests/README.md, not
            here: a number inside a test docstring is the first thing to go stale.
@@ -15,6 +17,7 @@ CALLERS:   `python -m pytest` — the suite count lives in tests/README.md, not
 
 import importlib.util
 import re
+import tomllib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -156,6 +159,43 @@ def test_requirements_txt_has_no_unused_pins():
     # ...and the runtime roots it does need are still pinned
     for kept in ("curl_cffi", "pandas", "playwright", "psycopg", "sqlglot", "pytest"):
         assert re.search(rf"^{kept}==", text, re.M | re.I), kept
+
+
+# ---------------------------------------------------------------------------
+# Interpreter-version drift — added 2026-10-25 after the first CI run that
+# carried the mypy gate (40197244569) failed on it:
+#
+#   .venv\Lib\site-packages\numpy\__init__.pyi:737: error: Type statement is
+#   only supported in Python 3.12 and greater   [syntax]
+#   Found 1 error in 1 file (errors prevented further checking)
+#
+# checks.yml installs Python 3.14, but [tool.mypy] still declared 3.11, and
+# numpy==2.5.4 ships PEP 695 `type` aliases in its stubs — below a 3.12 target
+# mypy refuses to parse them and stops before reading src/ at all. The gate was
+# red AND checked nothing, which is the worst of both. These three numbers
+# (workflow pin, mypy target, ruff target) must move together; pinning them to
+# each other is what keeps a "known-good" config from quietly rotting.
+# Verified by: test_tool_versions_match_the_ci_interpreter.
+# ---------------------------------------------------------------------------
+PYPROJECT = ROOT / "pyproject.toml"
+
+
+def test_tool_versions_match_the_ci_interpreter():
+    text = CHECKS_WORKFLOW.read_text(encoding="utf-8")
+    pinned = re.search(r'python-version:\s*"(\d+)\.(\d+)"', text)
+    assert pinned, "checks.yml must pin an interpreter for the gates to run on"
+    major, minor = pinned.groups()
+    cfg = tomllib.loads(PYPROJECT.read_text(encoding="utf-8"))
+    assert cfg["tool"]["mypy"]["python_version"] == f"{major}.{minor}", (
+        "mypy's target must be the interpreter CI installs"
+    )
+    assert cfg["tool"]["ruff"]["target-version"] == f"py{major}{minor}", (
+        "ruff's target must be the interpreter CI installs"
+    )
+    # and it must clear the floor that makes the numpy stubs parseable at all
+    assert (int(major), int(minor)) >= (3, 12), (
+        "below 3.12 mypy aborts on numpy's PEP 695 stubs before checking src"
+    )
 
 
 # ---------------------------------------------------------------------------

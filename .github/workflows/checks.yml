@@ -10,7 +10,7 @@
 #            story; requirements-dev.txt (ruff + mypy) is installed here ONLY —
 #            the nightly job's env stays runtime-only. Deliberately holds NO
 #            credentials — checks need none, and without config/*.local.env the
-#            two DataImpulse-credential tests skip (214 passed, 2 skipped),
+#            two DataImpulse-credential tests skip (218 passed, 2 skipped),
 #            pinned by the no-secrets guard in tests/test_workflow_yaml.py.
 #            Verified by: tests/test_workflow_yaml.py (test_checks_workflow_*).
 # INPUTS:    this checkout + requirements.txt + requirements-dev.txt (ruff,

@@ -2,10 +2,10 @@
 
 **What lives here.** 17 test modules + `fixtures/`; run with
 `python -m pytest -q` (config in `pyproject.toml`: `pythonpath = ["."]`,
-`testpaths = ["tests"]`). Baseline 2026-10-25: **216 passed** here — the two
+`testpaths = ["tests"]`). Baseline 2026-10-25: **220 passed** here — the two
 DataImpulse-credential tests (`test_scrape.py`) skip on a machine without
 `config/dataimpulse.local.env`, which is every CI run, so Actions sees
-214 passed + 2 skipped.
+218 passed + 2 skipped.
 
 | File | Pins |
 |---|---|

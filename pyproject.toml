@@ -22,7 +22,20 @@ addopts = "-ra"
 # `pytest -m "not db"` style selection works and skips become visible.
 
 [tool.mypy]
-python_version = "3.11"
+# MUST match the interpreter checks.yml installs (and the runtime itself:
+# README, docs/decisions.md §6 — Python 3.14, CI pins "3.14").
+#
+# It used to say "3.11", and that was not a style choice but a broken gate: the
+# first CI run with mypy in it (40197244569, 2026-10-25) died on
+#   .venv\Lib\site-packages\numpy\__init__.pyi:737: error: Type statement is
+#   only supported in Python 3.12 and greater  [syntax]
+#   Found 1 error in 1 file (errors prevented further checking)
+# because numpy==2.5.4 ships PEP 695 `type` aliases in its stubs, which mypy
+# refuses to parse below a 3.12 target. So the gate was red AND vacuous — it
+# never reached a single file under src/. tests/test_workflow_yaml.py
+# ::test_tool_versions_match_the_ci_interpreter now pins these numbers to the
+# workflow so they cannot silently drift apart again.
+python_version = "3.14"
 namespace_packages = true
 explicit_package_bases = true
 strict_optional = true
@@ -44,7 +57,10 @@ files = ["src"]
 # E,F,W,I,UP,B,SIM,C4,RUF set is 282. Widening the list below is how the gate
 # grows — the CI command stays `ruff check src scripts tests dashboard`.
 [tool.ruff]
-target-version = "py311"
+# Same rule as mypy's python_version above: the target is the interpreter the
+# pipeline actually runs, which checks.yml pins to 3.14. The selected rules
+# (E4/E7/E9/F) are version-insensitive, so this is honesty rather than behaviour.
+target-version = "py314"
 line-length = 100        # documents intent only; E501 is not selected (see above)
 src = ["src", "scripts", "tests", "dashboard"]
 extend-exclude = ["site", "jobs", ".venv", "node_modules"]

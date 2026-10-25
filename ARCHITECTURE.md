@@ -1,13 +1,18 @@
 # ARCHITECTURE.md — Off-Market Radar NYC
 
-> **Describes:** the working tree as of **2026-10-25** — commit **`f446e67`**
-> (HEAD of `main`, 2026-10-25) plus the *uncommitted* fix pass in `git status`.
-> The refactor itself is no longer uncommitted: it landed on 2026-10-22 as
-> `4668dfb` → `1c5c047`, with the guardrail CI in `4e716f1`
+> **Describes:** the working tree as of **2026-10-25** — the post-review fix
+> pass, pushed to `main` as **`dc5e74f`** ("blocks fail loudly, dead runs get
+> recorded, the site stops over-claiming") together with the interpreter-target
+> correction that `checks.yml`' own first run forced (see the `[tool.mypy]`
+> note in `pyproject.toml`). The refactor itself landed earlier: `4668dfb` →
+> `1c5c047` (2026-10-22), with the guardrail CI in `4e716f1`
 > ([REFACTOR_PLAN.md](REFACTOR_PLAN.md)).
-> Verified **2026-10-25**: `pytest` **216 passed** · `ruff check src scripts
+> Verified **2026-10-25**: `pytest` **220 passed** · `ruff check src scripts
 > tests dashboard` + `mypy src` clean · `dashboard/verify_contract.py` **54/54**
-> · all four CLIs `--help` exit 0.
+> · all four CLIs `--help` exit 0. Caveat that still holds: `mypy src` is green
+> here because the *runtime* interpreter (3.14) and the declared target now
+> agree — the local env carries numpy 2.4.6 while `requirements.txt` pins
+> 2.5.4, so CI is the only place the pinned stubs are actually parsed.
 >
 > Orientation order for a new human/agent: **this file → the directory README
 > (`README.md` in each dir) → the file's own T0 header**. Detail sources:
@@ -110,7 +115,7 @@ what makes `/api/health`'s failure count real rather than always zero.
 # Interpreter — conda env, no activation needed (see docs/decisions.md):
 PY=~/.anaconda3/envs/off-market-radar/bin/python
 
-$PY -m pytest -q                       # 216 passed (2026-10-25)
+$PY -m pytest -q                       # 220 passed (2026-10-25)
 $PY -m ruff check src scripts tests dashboard   # 0 findings (pinned ruleset)
 $PY -m mypy src                        # Success: 43 source files
 $PY dashboard/verify_contract.py        # 54 / 54, exit 0

@@ -126,7 +126,7 @@ $PY -m src.clean  --in jobs/<run_id>/raw --out jobs/<run_id>/cleaned
 $PY -m src.store  --in jobs/<run_id>/cleaned
 
 # 3. Verify
-$PY -m pytest -q                  # 216 passed (2026-10-25). The DataImpulse-credential
+$PY -m pytest -q                  # 220 passed (2026-10-25). The DataImpulse-credential
                                   # tests now run because config/dataimpulse.local.env
                                   # exists; without it they skip.
 $PY -m ruff check src scripts tests dashboard   # 0 findings — the CI lint gate
@@ -253,7 +253,7 @@ city-agnostic (zip/lat-long drive the map).
 | Stage | Status |
 |---|---|
 | 1. Scrape | ✅ live-proxy runs — **full harvest `jobs/full-harvest-20261023/`**: 177/177 ZIP shards, 22,577 raw records, manifest `success`, 99.2% of Zillow's reported 22,756. Earlier: **1,011 records** (30 pages, 120/120 details) via CI run `20261016-055515`, and an 82-record smoke run `jobs/smoke-scrape-20261015-084632`. CI runs leave **no `jobs/` evidence** — the runner's disk dies with it — so the CI figure is recorded here and in `docs/roadmap.md` |
-| 2. Clean | ✅ 216 tests green; full-harvest run 22,577 → **22,317** after the opt-in `--sanitize` guard (147 zero-price, 113 out-of-market dropped; 10 prior prices nulled) — `jobs/full-harvest-20261023/cleaned/` |
+| 2. Clean | ✅ 220 tests green; full-harvest run 22,577 → **22,317** after the opt-in `--sanitize` guard (147 zero-price, 113 out-of-market dropped; 10 prior prices nulled) — `jobs/full-harvest-20261023/cleaned/` |
 | 3. Store | ✅ live-PG load of the full harvest, 22,317 records in ~23 s (`jobs/full-harvest-20261023/store/`); unshimmed transaction fix verified earlier with 31/31 live checks (`jobs/pg-fix-20261015-122253`) |
 | 4. Dashboard | ✅ sqlglot parse + DDL cross-check + DAX↔guide consistency (54 checks via `dashboard/verify_contract.py`) |
 
@@ -321,7 +321,7 @@ the tracked/High/source detail. Detail: `jobs/tier1-gate-fixes/evidence/gate-fix
 - Prove the migration against a real local PostgreSQL before touching production:
   `scripts/tier1_migration_check.ps1` (apply order, idempotency, the upgrade guard,
   the grant hazard, the cold-start gate, the history view vs the shipped query)
-- Test count is now **216 passed** (`python -m pytest -q`, re-verified
+- Test count is now **220 passed** (`python -m pytest -q`, re-verified
   2026-10-25); `dashboard/verify_contract.py` 54/54; `ruff check
   src scripts tests dashboard` and `mypy src` both clean — the two static gates
   `checks.yml` now runs before the tests. The DataImpulse-credential
