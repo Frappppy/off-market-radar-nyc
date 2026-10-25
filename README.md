@@ -40,7 +40,10 @@ this file → the `README.md` in each directory → the file's own T0 header
   - `High`   — DOM > 90 **and** price drop > 5%
   - `Medium` — DOM > 90 **or** price drop > 5%
   - `Low`    — otherwise
-  Output: Parquet + CSV with a full audit trail.
+  Output: Parquet + CSV with a full audit trail. An opt-in `--sanitize` guard —
+  always on in `run_daily.py` — drops rows with no positive price and rows whose
+  state is not `NY`, and nulls a `price_previous` that is more than 5× the
+  current price (the row survives). `docs/decisions.md` §12 has the reasoning.
 - **Step 3 — Store (`src/store`)**: Postgres schema (Neon-ready) with
   `listings` (current state), `listing_snapshots` (append-only daily
   time-series, idempotent upserts), and `pipeline_runs` (ops log).
@@ -118,9 +121,9 @@ $PY -m src.clean  --in jobs/<run_id>/raw --out jobs/<run_id>/cleaned
 $PY -m src.store  --in jobs/<run_id>/cleaned
 
 # 3. Verify
-$PY -m pytest -q                  # 164 passed, 2 skipped (2026-10-22). The 2 skips are
-                                  # test_proxy_url_* / test_scrub_secrets_*: they need
-                                  # DATAIMPULSE_* credentials and run in CI, which has them.
+$PY -m pytest -q                  # 178 passed (2026-10-25). The DataImpulse-credential
+                                  # tests now run because config/dataimpulse.local.env
+                                  # exists; without it they skip.
 $PY dashboard/verify_contract.py  # 54/54, exit 0
 # scripts/*.ps1 are Windows-only; neither runs on this platform.
 ```
@@ -220,11 +223,15 @@ city-agnostic (zip/lat-long drive the map).
   `scripts/run_daily.py`'s policy comment calls the new budget "about the same
   load", spent where it buys coverage: a search page returns ~41 cards in one
   request while a detail page returns one listing in one request. Zillow NYC
-  reports ~22.8k active listings, so
-  a run samples roughly 5% of them — a deliberate, documented ceiling, not a
-  full-market scrape. The numbers live in one place: `DAILY_PAGES`,
-  `DAILY_MAX_DETAILS`, `DAILY_DELAY` in `scripts/run_daily.py`, pinned by
-  `tests/test_run_daily.py`.
+  reports ~22.8k active listings, so a daily run samples roughly 5% of them.
+  The numbers live in one place: `DAILY_PAGES`, `DAILY_MAX_DETAILS`,
+  `DAILY_DELAY` in `scripts/run_daily.py`, pinned by `tests/test_run_daily.py`.
+- **One-off full harvest** (2026-10-23): the whole market was walked once, as a
+  separate, explicitly approved run — 177 ZIP shards, 22,577 raw records, at the
+  same pacing and with the same abort-on-CAPTCHA rule (`python -m
+  src.scrape.harvest`, resumable ledger in `jobs/full-harvest-20261023/`). It is
+  **not** wired into the cron; `run_daily.py` is unchanged at 150 requests. Treat
+  the resulting 97.9% coverage as a one-off snapshot, not the steady state.
 - **CAPTCHA is a hard stop**: any PerimeterX/CAPTCHA challenge aborts the run
   (manifest `status: failed`); the pipeline never attempts to defeat it.
 - **Evidence chain**: robots snapshots, per-run manifests, `pages_fetched.json`
@@ -235,9 +242,9 @@ city-agnostic (zip/lat-long drive the map).
 
 | Stage | Status |
 |---|---|
-| 1. Scrape | ✅ live-proxy runs — **1,011 records** (30 pages, 120/120 details) via CI run `20261016-055515`; earlier 82-record smoke run `jobs/smoke-scrape-20261015-084632`. Note: CI runs leave **no `jobs/` evidence** — the runner's disk dies with it, so the CI run has no directory here by design; the numbers are recorded in this README and `docs/roadmap.md` |
-| 2. Clean | ✅ full pytest suite green; end-to-end on fixture verified |
-| 3. Store | ✅ live-PG unshimmed fix — `with conn.transaction()` per transaction, 31/31 live checks (`jobs/pg-fix-20261015-122253`) |
+| 1. Scrape | ✅ live-proxy runs — **full harvest `jobs/full-harvest-20261023/`**: 177/177 ZIP shards, 22,577 raw records, manifest `success`, 99.2% of Zillow's reported 22,756. Earlier: **1,011 records** (30 pages, 120/120 details) via CI run `20261016-055515`, and an 82-record smoke run `jobs/smoke-scrape-20261015-084632`. CI runs leave **no `jobs/` evidence** — the runner's disk dies with it — so the CI figure is recorded here and in `docs/roadmap.md` |
+| 2. Clean | ✅ 178 tests green; full-harvest run 22,577 → **22,317** after the opt-in `--sanitize` guard (147 zero-price, 113 out-of-market dropped; 10 prior prices nulled) — `jobs/full-harvest-20261023/cleaned/` |
+| 3. Store | ✅ live-PG load of the full harvest, 22,317 records in ~23 s (`jobs/full-harvest-20261023/store/`); unshimmed transaction fix verified earlier with 31/31 live checks (`jobs/pg-fix-20261015-122253`) |
 | 4. Dashboard | ✅ sqlglot parse + DDL cross-check + DAX↔guide consistency (54 checks via `dashboard/verify_contract.py`) |
 
 ### Website — Tier 1 of the roadmap: built, migrated, deployed, hardened
@@ -304,9 +311,9 @@ the tracked/High/source detail. Detail: `jobs/tier1-gate-fixes/evidence/gate-fix
 - Prove the migration against a real local PostgreSQL before touching production:
   `scripts/tier1_migration_check.ps1` (apply order, idempotency, the upgrade guard,
   the grant hazard, the cold-start gate, the history view vs the shipped query)
-- Test count is now **164 passed, 2 skipped** (`python -m pytest -q`, re-verified
-  2026-10-22); `dashboard/verify_contract.py` 54/54. The 2 skips are the
-  DataImpulse-credential tests and run in CI.
+- Test count is now **178 passed** (`python -m pytest -q`, re-verified
+  2026-10-25); `dashboard/verify_contract.py` 54/54. The DataImpulse-credential
+  tests run when `config/dataimpulse.local.env` is present and skip without it.
 
 #### Deploy mechanics
 
@@ -423,26 +430,47 @@ The Vercel site reads Neon and the freshness strip reports `live: true`. "Live"
 describes the **plumbing**; this section describes the **coverage**, because the
 two are not the same thing.
 
-As of 2026-10-16 the database holds **two** successful runs (see `pipeline_runs`):
+As of 2026-10-25 the database holds **five** successful runs (see `pipeline_runs`),
+including a one-off **full-market harvest** and a daily run after it:
 
 | run_id | records | how it got there |
 |---|---|---|
 | `neon-prod-load-20261016` | 82 | manual load of the 2-page smoke scrape |
 | `20261016-055515` | 1,011 | scheduled `daily_pipeline` (30 pages / 120 details) |
+| `20261020-145403` | 989 | scheduled `daily_pipeline` |
+| `full-harvest-20261023` | 22,317 | one-off full harvest, 177 ZIP shards, 22,577 raw → 22,317 after the clean-stage guard |
+| `20261024-135546` | 1,017 | scheduled `daily_pipeline` — back to the 150-request budget |
+
+**Read these two numbers separately, because the site does.**
+
+| | value | where it comes from |
+|---|---|---|
+| Ledger — every listing ever ingested | **22,492** (22,420 active) | `listings` / `vw_latest_listings` |
+| Newest daily cohort — what the header and hero show | **1,017** (2026-10-24) | `vw_latest_listings` filtered to `max(snapshot_date)` |
+
+The harvest did not disappear; the daily cron simply overwrote the *newest*
+snapshot with a 1,017-row cohort the next day. `/api/meta` therefore returns
+`total_tracked: 1,017`, `high_count: 76` and `total_ever_tracked: 22,492` — the
+design from commit `5267434` ("show today's cohort beside the total ledger"), and
+the reason every surface labels the first figure "tracked today".
 
 Current dataset, read through the read-only role's granted views:
 
-- **1,019 rows** in `vw_latest_listings`; the latest snapshot (2026-10-16) holds
-  **1,011 listings** — roughly **4.4%** of the ~22.8k active NYC listings Zillow
-  reports. A sample at portfolio scale, capped on purpose.
-- **2 snapshot dates** (2026-10-15, 2026-10-16), so the Trends page has a genuine
-  second point for ZIPs present in both — and gains one point per daily run.
-- **157 distinct ZIPs**, **211 (zip, date) rows** in `vw_zip_price_drop_30d` —
-  spread across all five boroughs rather than one.
-- Score mix: **43 High / 114 Medium / 862 Low**.
-- **138 rows carry a price cut**; 892 carry $/sqft and 1,012 carry coordinates.
-  `price_drop_pct` only exists for detail-enriched rows, and the 120-per-run
-  detail budget is aimed at site-flagged "Price cut" listings first.
+- **22,492 rows** in `vw_latest_listings`; the **2026-10-23** snapshot holds
+  **22,317** of them — **97.9%** of the ~22.8k active NYC listings Zillow reported
+  on 2026-10-15, and the only whole-market point in the series.
+- **5 snapshot dates** (2026-10-15/16/20/23/24), **25,416** rows in
+  `listing_snapshots`, **699 (zip, date) rows** in `vw_zip_price_drop_30d`, and
+  **~29 MB** total. Only 2026-10-23 is market-wide, so the 30-day trend view has
+  one meaningful point per ZIP until the harvest is repeated.
+- Score mix across the ledger: **1,848 High / 8,746 Medium / 11,898 Low**. The
+  harvest Parquet alone is 1,844 / 8,731 / 11,742; the view adds the 135 rows from
+  earlier daily runs that have not yet missed `STALE_RUNS = 3` runs.
+- **7,058 of the 22,317 harvest rows carry `price_drop_pct`** (31.6%), 17,535
+  carry `$ / sqft`, 22,207 carry coordinates. Price history comes from the listing
+  page, so a search-only harvest only sees cuts Zillow had already flagged —
+  **the High count is a floor, not a ceiling**, because a missing drop can never
+  score High (`src/clean/score.py` treats null as ≤ 5%).
 
 Known limits, stated plainly:
 
@@ -450,9 +478,15 @@ Known limits, stated plainly:
   82-row smoke sample, byte-identical to `jobs/smoke-scrape-20261015-084632`. It
   renders only when Neon is unreachable, and it is **not** the live dataset — so
   a fallback render legitimately looks smaller than the live site.
-- Coverage is capped by design, not by accident: this is ~4% of the market, and
-  every extra percent costs requests against a site that actively challenges
-  automation. The ceiling is a deliberate compliance choice.
+- The 97.9% figure is a **one-off**, not the steady state — the very next daily
+  run took the newest cohort back to 1,017. `scripts/run_daily.py` still spends
+  150 requests per day. Repeating the harvest is a manual, explicitly approved
+  action (`python -m src.scrape.harvest`, resumable ledger under
+  `jobs/full-harvest-20261023/`), deliberately **not** wired into the cron.
+- **Detail enrichment is still skipped.** The harvest ran the search pass only
+  (`--details none`), which is why 68% of rows have no `price_drop_pct`. Running
+  `--details motivated` against the same ledger is the cheapest way to raise the
+  High count without a single extra search request.
 
 ### Ingestion was blocked earlier the same day — and why that matters
 

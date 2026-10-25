@@ -5,6 +5,10 @@
 //   this the whole site would 500 instead of serving a clearly-labelled frozen
 //   sample. Source: jobs/smoke-scrape-20261015-084632/cleaned/
 //   listings_2026-10-15.csv (82 live-proxy records), copied to public/data/.
+//   SCOPE: this file is ONLY the offline fallback. The live site reads Neon and
+//   currently tracks ~22.3k listings; the 82 rows here are a smoke-run sample
+//   kept small on purpose so the fallback bundle stays tiny and obviously not
+//   the real dataset. Do not read it as the site's coverage figure.
 //   The result is cached in-module: every route that falls back must see the
 //   SAME rows, and the file is read once per process.
 // Verified by: NOTHING (gap) — nothing compares two routes' fallback rows.

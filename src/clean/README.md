@@ -16,6 +16,14 @@ change them you must change [docs/data_contract.md](../../docs/data_contract.md)
 §Stage 2 and the boundary tests in the same commit (invariants I1/I2,
 [docs/decisions.md](../../docs/decisions.md) §1).
 
+**Market-analysis guard (`--sanitize`, off by default).** `derive.sanitize()`
+drops rows with `price_current` missing/≤ 0 and rows whose `state` is set and
+isn't `NY` (Zillow pads ZIP pages with nearby homes), and nulls
+`price_previous` when it exceeds 5× the current price (observed digit-duplication
+artefacts that manufacture fake High scores). The row survives in the second
+case — DOM, price and location are still real. `scripts/run_daily.py` always
+passes the flag; the raw JSONL is never touched, so the guard is reversible.
+
 **Detail.** Each file's T0 header. Tests: `tests/test_clean.py` (CLI
 end-to-end), plus `tests/test_clean_score.py`, `tests/test_clean_derive.py`,
 `tests/test_clean_frame.py` (the topic split of the old monolith) and

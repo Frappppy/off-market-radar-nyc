@@ -70,6 +70,23 @@ def _build_log(
         f"- nested columns dropped from tabular output (raw JSONL keeps the "
         f"audit trail): {dropped_note} — present in {stats.price_history_rows} rows",
         "",
+        "## Sanitize",
+    ]
+    if stats.guards is None:
+        lines.append("- not applied (pass `--sanitize` to enable)")
+    else:
+        guards = stats.guards
+        lines += [
+            f"- dropped {guards.get('zero_price', 0)} row(s) with price_current "
+            "missing or <= 0 (auction / 'contact for price' cards carry no signal)",
+            f"- dropped {guards.get('out_of_market', 0)} row(s) whose state is "
+            "set and is not NY (nearby-home padding from Zillow's ZIP pages)",
+            f"- nulled price_previous on {guards.get('implausible_previous', 0)} "
+            "row(s) where the prior price exceeded 5x the current price (parse "
+            "artefact); the row keeps its DOM, price and location",
+        ]
+    lines += [
+        "",
         "## Transform",
         "- `address_std`: uppercase, whitespace collapsed, trimmed "
         "(missing address stays null)",

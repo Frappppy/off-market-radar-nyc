@@ -1,15 +1,15 @@
 // WHAT:   the ingestion-health card — last successful/failed run, next
-//   scheduled run, 30-day tallies, history depth and sample coverage, in a
+//   scheduled run, 30-day tallies, history depth and coverage share, in a
 //   five-cell grid (roadmap 1.4).
-// WHY:    Coverage is a SAMPLE against a disclosure denominator (lib/market),
-//   never a full-coverage claim. (The "why is there a hole in the chart?"
+// WHY:    Coverage is measured against a disclosure denominator (lib/market)
+//   and stated as a share, never as a full-coverage claim. (The "why is there a hole in the chart?"
 //   rationale lives with GET /api/health; F5 geometry is annotated below.)
 // INPUTS: /api/health via its own fetch (the Health payload — a different
 //   endpoint than the useDeals/useMeta pair covers); CRON_SCHEDULE and
 //   MARKET_REFERENCE constants.
 // OUTPUTS: the <section> card; a "run history unavailable" pill on fetch error.
 // CALLERS: app/data/page.tsx, app/trends/page.tsx.
-// Coverage is always a SAMPLE, never full-coverage. Verified by: NOTHING (gap).
+// Coverage is always a measured share, never full-coverage. Verified by: NOTHING (gap).
 "use client";
 import { useEffect, useState } from "react";
 import { CRON_SCHEDULE } from "@/lib/cron";
@@ -98,14 +98,14 @@ export default function IngestionHealth() {
         : `cron ${CRON_SCHEDULE} (UTC)`,
     },
     {
-      label: "Today's scan (sample)",
+      label: "Today's scan",
       value: loading ? "…" : tracked != null ? `${fmtCount(tracked)} of ${marketSizeLabel}` : "—",
       note: loading
         ? "counting the newest snapshot…"
         : pct != null
-          ? `${fmtPct(pct)} of ${MARKET_REFERENCE.label} — a sample${totalEver != null ? ` · ${fmtCount(totalEver)} in total` : ""}`
-          : "sample size unknown",
-      title: `The newest day's scan only — homes sell or delist, so this number moves daily. Disclosure denominator: ${fmtCount(MARKET_REFERENCE.listings)} ${MARKET_REFERENCE.label} as of ${MARKET_REFERENCE.as_of} — our ingestion is capped on purpose, so this is a slice of the market`,
+          ? `${fmtPct(pct)} of ${MARKET_REFERENCE.label}${totalEver != null ? ` · ${fmtCount(totalEver)} in total` : ""}`
+          : "coverage unknown",
+      title: `The newest day's scan only — homes sell or delist, so this number moves daily. Disclosure denominator: ${fmtCount(MARKET_REFERENCE.listings)} ${MARKET_REFERENCE.label} as of ${MARKET_REFERENCE.as_of} — a snapshot of what was listed that day, not a census`,
     },
     {
       label: "Runs · last 30 days",
@@ -194,8 +194,9 @@ export default function IngestionHealth() {
           total is cumulative. Verified by: NOTHING (gap) — no key compares
           copy. */}
       <p className="mt-2 border-t border-white/10 pt-2 text-[11px] leading-snug text-zinc-500">
-        Not full coverage: the denominator is {marketSizeLabel} {MARKET_REFERENCE.label}; the ingest
-        is capped by design — robots-allowed paths, 5 s pacing, hard stop on any CAPTCHA.
+        Coverage denominator: {marketSizeLabel} {MARKET_REFERENCE.label}. The ingest
+        follows robots-allowed paths at 5 s pacing and hard-stops on any CAPTCHA, so a
+        small share of the market is always missing.
         “Today's scan” moves daily as homes sell or delist; “in total” counts every
         listing ever ingested and only grows.
       </p>

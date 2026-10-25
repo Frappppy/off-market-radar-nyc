@@ -15,6 +15,7 @@ TESTED BY:  ``tests/test_scrape.py`` — ``test_proxy_url_uses_mandatory_geo*``
 """
 
 import os
+import zlib
 
 from .config import PROJECT_ROOT
 
@@ -55,18 +56,67 @@ def load_dataimpulse_credentials():
     return dict(creds)
 
 
+def _usable(creds):
+    """Real credentials, not the ``your_*`` placeholders from the example file."""
+    login = creds.get("DATAIMPULSE_LOGIN") or ""
+    password = creds.get("DATAIMPULSE_PASSWORD") or ""
+    if not login or not password:
+        return False
+    return not (login.startswith("your_") or password.startswith("your_"))
+
+
 def build_proxy_url(sessid=None):
     creds = load_dataimpulse_credentials()
-    login = creds.get("DATAIMPULSE_LOGIN")
-    password = creds.get("DATAIMPULSE_PASSWORD")
-    if not login or not password:
+    if not _usable(creds):
         return None
+    login = creds["DATAIMPULSE_LOGIN"]
+    password = creds["DATAIMPULSE_PASSWORD"]
     host = creds.get("DATAIMPULSE_HOST") or "gw.dataimpulse.com"
     port = creds.get("DATAIMPULSE_PORT") or "823"
     user = f"{login}__cr.us"
     if sessid:
         user = f"{user};sessid.{sessid}"
     return f"http://{user}:{password}@{host}:{port}"
+
+
+def build_browser_proxy(session=None):
+    """Playwright proxy dict for the headed harvester.
+
+    Sticky exits live on the 10000-20000 port block (one IP per port, minutes
+    to hours — see the DataImpulse skill). A named ``session`` maps to a fixed
+    port so a run, and its solved PerimeterX cookies, keep the same exit IP
+    across restarts. No session -> rotating :823. Credentials are still read
+    only from the gitignored env file; the caller never logs this dict.
+    """
+    creds = load_dataimpulse_credentials()
+    if not _usable(creds):
+        return None
+    login = creds["DATAIMPULSE_LOGIN"]
+    password = creds["DATAIMPULSE_PASSWORD"]
+    host = creds.get("DATAIMPULSE_HOST") or "gw.dataimpulse.com"
+    if session:
+        base = int(creds.get("DATAIMPULSE_STICKY_PORT") or 10000)
+        port = base + (zlib.crc32(session.encode("utf-8")) % 9000)
+    else:
+        port = int(creds.get("DATAIMPULSE_ROTATE_HTTP_PORT") or 823)
+    return {
+        "server": f"http://{host}:{port}",
+        "username": f"{login}__cr.us",
+        "password": password,
+    }
+
+
+def browser_proxy_display(session=None):
+    creds = load_dataimpulse_credentials()
+    host = creds.get("DATAIMPULSE_HOST") or "gw.dataimpulse.com"
+    if session:
+        base = int(creds.get("DATAIMPULSE_STICKY_PORT") or 10000)
+        port = base + (zlib.crc32(session.encode("utf-8")) % 9000)
+        mode = f"sticky sessid={session}"
+    else:
+        port = int(creds.get("DATAIMPULSE_ROTATE_HTTP_PORT") or 823)
+        mode = "rotating"
+    return f"{host}:{port} (cr.us, {mode})"
 
 
 def proxy_display(sessid=None):

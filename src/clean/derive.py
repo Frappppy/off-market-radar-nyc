@@ -16,7 +16,7 @@ TESTED BY:  ``tests/test_clean_derive.py``; derived-column order in I2 parity
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
 from typing import Any
@@ -118,6 +118,43 @@ def transform(frame: pd.DataFrame) -> pd.DataFrame:
     return out[ordered]
 
 
+# --- guards -----------------------------------------------------------------
+
+#: the project only models the NYC market; other states are nearby-home padding
+IN_MARKET_STATE = "NY"
+#: a prior price above this multiple of the current price is a parse artefact
+#: (observed: 550,000,000 -> 550,000 = a duplicated digit group), not a cut
+MAX_PREV_RATIO = 5.0
+
+
+def sanitize(frame: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, int]]:
+    """Remove rows that cannot carry a market signal and null impossible priors.
+
+    Dropped: listings with no usable price (``<= 0``) and listings whose
+    ``state`` is present but outside NY. Nulled: ``price_previous`` values more
+    than :data:`MAX_PREV_RATIO` times the current price, so ``price_drop_pct``
+    cannot manufacture a fake High score. The row itself is kept — its DOM,
+    price and location are still real.
+    """
+    price = pd.to_numeric(frame["price_current"], errors="coerce")
+    previous = pd.to_numeric(frame["price_previous"], errors="coerce")
+    state = frame["state"].astype("string").str.strip().str.upper()
+
+    no_price = price.isna() | (price <= 0)
+    out_of_market = state.notna() & (state != "") & (state != IN_MARKET_STATE)
+    implausible = previous.notna() & ((previous <= 0) | (previous > price * MAX_PREV_RATIO))
+
+    out = frame.copy()
+    out.loc[implausible, "price_previous"] = pd.NA
+    kept = out.loc[~(no_price | out_of_market)].copy()
+    guards = {
+        "zero_price": int(no_price.sum()),
+        "out_of_market": int(out_of_market.sum()),
+        "implausible_previous": int(implausible.sum()),
+    }
+    return kept, guards
+
+
 # --- full pipeline ----------------------------------------------------------
 
 
@@ -135,13 +172,23 @@ class CleanStats:
     unknown_property_types: list[str]
     snapshot_date: date | None
     distinct_snapshot_dates: int
+    guards: dict[str, int] | None = None
 
 
-def clean_file(path: str | Path) -> tuple[pd.DataFrame, CleanStats]:
-    """Read a raw JSONL file and return the clean frame plus run statistics."""
+def clean_file(path: str | Path, *, sanitize_rows: bool = False) -> tuple[pd.DataFrame, CleanStats]:
+    """Read a raw JSONL file and return the clean frame plus run statistics.
+
+    ``sanitize_rows`` applies :func:`sanitize` (drop unpriced / out-of-market
+    rows, null impossible prior prices). Off by default so the documented
+    raw->tabular contract is unchanged unless the caller asks for it.
+    """
     path = Path(path)
     raw = read_jsonl(path)
-    frame = transform(build_frame(raw.records))
+    built = build_frame(raw.records)
+    guards = None
+    if sanitize_rows:
+        built, guards = sanitize(built)
+    frame = transform(built)
 
     days = [value for value in frame["snapshot_date"].tolist() if not _is_missing(value)]
     extras = sorted({key for record in raw.records for key in record} - set(RAW_COLUMNS))
@@ -167,5 +214,6 @@ def clean_file(path: str | Path) -> tuple[pd.DataFrame, CleanStats]:
         unknown_property_types=sorted(property_types - PROPERTY_TYPES),
         snapshot_date=pick_snapshot_date(frame["snapshot_date"]),
         distinct_snapshot_dates=len(set(days)),
+        guards=guards,
     )
     return frame, stats

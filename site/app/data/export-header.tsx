@@ -36,8 +36,8 @@ export default function ExportHeader({ rowCount, query, loaded, loadError }: {
             : "The CSV below exports exactly the rows matching the current filters."}
         </p>
         <p className="mt-1 text-xs text-zinc-500">
-          Sample data: a capped, robots-respecting Zillow scan. Citywide inventory is {marketSizeLabel}{" "}
-          {MARKET_REFERENCE.label}, so this is a slice of the market rather than full coverage.
+          Coverage: a robots-respecting Zillow scan. Citywide inventory is {marketSizeLabel}{" "}
+          {MARKET_REFERENCE.label}; a small share is always missing.
         </p>
       </div>
       <div className="ml-auto flex flex-wrap items-center gap-2">

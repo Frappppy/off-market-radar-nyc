@@ -2,7 +2,7 @@
 // WHAT:     the computed insight cards on the "/" overview — three cards that
 //           read the CURRENT filter cohort (/api/deals) and the snapshot meta
 //           (/api/meta): where High scores concentrate, how stale/cut the
-//           cohort is, and the honest sample scope.
+//           cohort is, and how complete the coverage is.
 // WHY:      D3 — the old overview hardcoded three claim cards ("Staten Island
 //           price cuts cluster", "Condos move faster than houses") that no
 //           filter change and no snapshot could ever contradict
@@ -59,7 +59,7 @@ export default function InsightCards() {
     };
   }, [deals]);
 
-  // Sample scope, stated before any number reads as market-wide (the same
+  // Coverage scope, stated before any number reads as market-wide (the same
   // disclosure rule lib/market documents; HeroStats prints this note too, and
   // here it replaces the old hardcoded "capped on purpose" prose).
   // Verified by: NOTHING (gap) — nothing diffs this copy against lib/market's.
@@ -90,10 +90,14 @@ export default function InsightCards() {
               (insight.pctCut != null ? `; ${insight.pctCut}% have already cut the price.` : "."),
     },
     {
-      title: "Capped on purpose, not broken",
+      title: "How complete this is",
       body:
         (scope != null ? `${scope}. ` : meta == null ? "… " : "No snapshot yet. ") +
-        "The ingest follows robots-allowed paths at 5s pacing and hard-stops on any CAPTCHA, so this is a sample of NYC actives rather than full-market coverage." +
+        "The ingest follows robots-allowed paths at 5s pacing and hard-stops on any CAPTCHA; coverage is near-complete for Zillow actives but not guaranteed exhaustive." +
+        // The score's drop half needs price history, which only comes from a
+        // listing page. A cut we never saw cannot score High, so the count is a
+        // floor. Stated here rather than in the KPI cell, which stays numeric.
+        " Price history is only captured where a listing page was fetched, so the High count is a floor, not a ceiling." +
         // Cohort vs ledger, stated in prose on the landing page itself: the
         // tracked count a reader sees is the newest day's scan, which moves as
         // homes sell or delist — only the ever-seen total is cumulative.

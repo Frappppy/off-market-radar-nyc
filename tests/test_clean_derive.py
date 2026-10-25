@@ -128,3 +128,21 @@ def test_clean_file_stats(cleaned):
     assert stats.distinct_snapshot_dates == 1
     assert stats.dropped_columns == ["price_history"]
     assert stats.unknown_property_types == []
+
+
+def test_sanitize_is_opt_in_and_reports_what_it_dropped(cleaned):
+    """Default clean keeps every parsed row; --sanitize drops only unpriced
+    and out-of-market rows (the fixture holds two NJ padding rows)."""
+    _, plain = clean_file(FIXTURE)
+    assert plain.guards is None
+    assert plain.records_out == 10
+
+    frame, stats = clean_file(FIXTURE, sanitize_rows=True)
+    assert stats.guards == {
+        "zero_price": 0,
+        "out_of_market": 2,
+        "implausible_previous": 0,
+    }
+    assert len(frame) == 8
+    assert set(frame["state"]) == {"NY"}
+    assert stats.records_in == 10 and stats.records_out == 8

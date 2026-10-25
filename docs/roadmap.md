@@ -381,6 +381,38 @@ already merged. Two nits it raised were fixed, plus one defect found while measu
   trade: between 640 and 1023 px the header no longer shows the tracked/High/source detail.
   Tablet widths should be added to `cls.js` — that gap is why 0.317 went unnoticed.
 
+### Full-market harvest — coverage changes from ~4% to 97.9% (2026-10-23)
+
+Every figure above in this section is a **2026-10-16/17** snapshot and is left as
+written, because it is the evidence for those decisions. The dataset underneath
+them changed on 2026-10-23: a one-off, resumable full harvest
+(`python -m src.scrape.harvest`, 177 ZIP shards, 22,577 raw records, same pacing
+and CAPTCHA stop rule) was cleaned with the new opt-in `--sanitize` guard
+(22,577 → 22,317) and loaded into Neon.
+
+| | 2026-10-16 | 2026-10-23 (harvest) | 2026-10-25 (now) |
+|---|---|---|---|
+| newest-snapshot cohort | 1,011 | **22,317** | 1,017 |
+| `vw_latest_listings` (ledger) | 1,019 | 22,452 | **22,492** |
+| coverage of ~22.8k actives | 4.4% | **97.9%** | 4.5% |
+| snapshot dates | 2 | 4 | **5** |
+| High / Medium / Low | 43 / 114 / 862 | 1,846 / 8,746 / 11,860 | 1,848 / 8,746 / 11,898 |
+
+The third column is the point: the daily cron ran again on 2026-10-24 and
+**replaced the newest cohort with 1,017 rows**, so the site's headline number went
+back to a 150-request scan while the ledger kept all 22,492. That is the
+cohort-vs-ledger split the header labels, not a lost harvest — the 2026-10-23
+snapshot still holds all 22,317 rows.
+
+Two consequences worth keeping straight. **97.9% is a one-off**, not the steady
+state — the daily cron is unchanged at 150 requests — so the site's copy now says
+"coverage" rather than "sample", and the cohort-vs-ledger labels carry the
+difference. And **the High count is a floor**: `price_drop_pct` exists for only
+7,058 of the 22,317 rows because price history comes from the listing page, and a
+missing drop can never score High. Evidence:
+`jobs/full-harvest-20261023/{raw,cleaned,store}/manifest.json`,
+`store/verification.md`, `store/site-live-check.md`.
+
 ---
 
 ## Tier 2 — Differentiation

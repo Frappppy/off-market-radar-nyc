@@ -127,7 +127,8 @@ def build_stages(
         scrape,
         Stage(
             "clean",
-            [sys.executable, "-m", "src.clean", "--in", raw_in, "--out", cleaned_in],
+            [sys.executable, "-m", "src.clean", "--in", raw_in, "--out", cleaned_in,
+             "--sanitize"],
         ),
         Stage("store", [sys.executable, "-m", "src.store", "--in", cleaned_in]),
     ]

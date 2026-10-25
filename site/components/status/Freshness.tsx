@@ -65,7 +65,7 @@ export default function Freshness() {
           size. Verified by: NOTHING (gap) — the lg threshold is
           measurement-set, not asserted at runtime. */}
       <span className="hidden lg:inline" title="Tracked today = listings in the newest daily scan · in total = every listing ever ingested (only grows)">
-        {" · "}{meta.total_tracked != null ? fmtCount(meta.total_tracked) : "—"} tracked today (sample)
+        {" · "}{meta.total_tracked != null ? fmtCount(meta.total_tracked) : "—"} tracked today
         {meta.total_ever_tracked != null ? ` · ${fmtCount(meta.total_ever_tracked)} in total` : ""}
         {" · "}{meta.high_count != null ? fmtCount(meta.high_count) : "—"} High · source {meta.source}
       </span>

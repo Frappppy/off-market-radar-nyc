@@ -1,5 +1,5 @@
 // WHAT:   the / landing hero — eyebrow, headline with the LIVE High count,
-//   sample-scope disclosure paragraph, CTA row, and the four-cell stat strip.
+//   coverage-disclosure paragraph, CTA row, and the four-cell stat strip.
 // WHY:    Lev/Bluejack-inspired hero, but every number is computed: the old
 //   version had hardcoded placeholders. Stats are snapshot-global, not
 //   filter-dependent (the filtered cohort is the map's job). Inline comments
@@ -62,11 +62,11 @@ export default function HeroStats() {
   return (
     <section className="panel p-6 md:p-8">
       <p className="eyebrow">
-        NYC · sample snapshot ·{" "}
+        NYC · daily snapshot ·{" "}
         {meta == null ? "…" : meta.live ? "live from Neon" : "frozen fallback"}
       </p>
       <h1 className="mt-2 max-w-2xl text-3xl font-bold leading-[1.05] tracking-tight text-zinc-50 md:text-5xl">
-        {high != null ? `${high} motivated sellers` : "Motivated sellers"} in NYC this week
+        {high != null ? `${high} motivated sellers` : "Motivated sellers"} in NYC
       </h1>
       <p className="mt-3 max-w-xl text-zinc-400">
         Daily Zillow scan scored for price drops + days-on-market. Drag the DOM
@@ -89,8 +89,8 @@ export default function HeroStats() {
         className="mt-2 max-w-xl text-xs text-zinc-500"
         title={`Citywide count read from Zillow on ${MARKET_REFERENCE.as_of}`}
       >
-        Sample scope: a capped, robots-respecting scan of{" "}
-        {marketSizeLabel} {MARKET_REFERENCE.label} — not full coverage. Ingestion
+        Coverage: a robots-respecting scan of{" "}
+        {marketSizeLabel} {MARKET_REFERENCE.label}, refreshed daily. Ingestion
         follows robots-allowed paths only, 5s pacing, and hard-stops on any
         CAPTCHA challenge. The tracked count and its share sit in the strip below.
       </p>

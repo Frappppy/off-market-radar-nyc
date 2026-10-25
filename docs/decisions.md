@@ -186,3 +186,58 @@ exactly these three Windows/real-DB paths — every other script (e.g.
 are recorded so drift stays visible. If a Windows/Postgres environment ever
 runs this suite (e.g. via CI), the exemption should be revisited and the split
 re-proposed — documented, not forgotten.
+
+## 11. Full-corpus harvest: ZIP shards, headed browser, human-solved CAPTCHA
+
+**Context (2026-10-23).** One Zillow search cannot return NYC's 22,756 active
+listings — pagination stops around 820 rows. Separately, Zillow now answers
+`/<slug>/` pages with HTTP 403 **and a complete `__NEXT_DATA__` payload**; the
+old `403 => abort` rule killed every full run in three seconds
+([evidence](../jobs/harvest-probe/evidence/findings.md), screenshot included).
+
+**Decision.**
+1. Shard by ZIP (`config/nyc_zips.csv`, 177 residential MODZCTAs), using the
+   robots-allowed `/<borough>-ny-<zip>/` + `/<slug>/N_p/` shapes. No
+   `?searchQueryState=`, no filter paths.
+2. Detect a block by **payload absence**, not status: if `searchPageState`
+   (or the detail `gdpClientCache`) parses, the page is usable.
+3. When the payload is genuinely absent and PerimeterX is on screen, the run
+   **pauses** in a headed Chromium window, a human solves it, and the same
+   cookies continue. No solver, no bypass. `browser.py` owns this; the legacy
+   `http.looks_like_block()` is untouched so its 403 test still pins the
+   curl_cffi path.
+
+**Why a browser instead of curl_cffi.** Manual solving requires a visible,
+stateful session whose clearance cookie is bound to one residential exit IP;
+`build_browser_proxy()` therefore maps a named session to a sticky DataImpulse
+port (10000+), and the browser profile persists cookies across restarts.
+
+**Consequences.** The harvest is resumable (`harvest_state.json`), writes the
+same four stage-1 artifacts, and `src.clean` consumes it unchanged. Detail
+enrichment is a separate, slower pass (`--details motivated|all`); search cards
+already carry price, price change, DOM, type, beds/baths/sqft and lat/long.
+
+## 12. Clean-stage market guard is opt-in (`--sanitize`)
+
+**Context (2026-10-24).** The 22,577-row harvest carried three kinds of rows
+that are real scrape output but not market signal: 147 cards with
+`price_current = 0` (auction / "contact for price"), 113 out-of-state rows
+Zillow pads ZIP pages with, and 10 rows where a duplicated digit group made
+`price_previous` 10–100× the current price. The last group produced 7 fake
+`High` scores because the rule only looks at the drop percentage.
+
+**Decision.** `derive.sanitize()` drops the first two groups and nulls
+`price_previous` on the third (keeping the row). It runs only when
+`--sanitize` is passed, and `scripts/run_daily.py` always passes it. The
+default path is unchanged, so the fixture-pinned raw→tabular contract and its
+counts stay valid.
+
+**Why opt-in rather than unconditional.** `tests/fixtures/sample_raw.jsonl`
+deliberately contains two NJ rows to pin `state` pass-through; an unconditional
+drop would have silently changed the contract every consumer tests against.
+The flag makes the change explicit in the process log, which records the three
+counts on every run.
+
+**Consequences.** 22,577 raw rows → 22,317 analysed rows; High 1,855 → 1,844.
+The guard lives in stage 2 only — the raw JSONL keeps every row, so raising or
+lowering the thresholds later costs one re-clean, not a re-scrape.

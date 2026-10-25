@@ -102,6 +102,15 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="override the run_id written to manifest.json",
     )
+    parser.add_argument(
+        "--sanitize",
+        dest="sanitize_rows",
+        action="store_true",
+        help=(
+            "drop rows with no usable price or a non-NY state, and null prior "
+            "prices >5x the current price (recommended for market analysis)"
+        ),
+    )
     args = parser.parse_args(argv)
 
     started_at = utc_now_iso()
@@ -116,7 +125,7 @@ def main(argv: list[str] | None = None) -> int:
     run_id = resolve_run_id(args.run_id, input_path)
 
     try:
-        frame, stats = clean_file(input_path)
+        frame, stats = clean_file(input_path, sanitize_rows=args.sanitize_rows)
         fallback_note = None
         snapshot = stats.snapshot_date
         if snapshot is None:

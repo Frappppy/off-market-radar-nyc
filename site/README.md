@@ -10,7 +10,8 @@ phase-3 Playwright gate). Vercel's Root Directory points **here**.
 **Architecture.** Pages are thin *server* components that render *client*
 components; all data arrives client-side from `/api/*` after hydration. Every
 API degrades to the frozen 82-row CSV with `live:false` when Neon is
-unreachable — never an error page (invariant I14).
+unreachable — never an error page (invariant I14). The 82 rows are an offline
+safety net, not the dataset: the live site tracks ~22.3k listings in Neon.
 
 **The one trap.** Two known gaps, do not be surprised: `npm run lint` has no
 eslint dependency behind it (use `npm run typecheck` as the gate), and

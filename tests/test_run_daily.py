@@ -47,6 +47,7 @@ def test_build_stages_matches_contract():
     assert clean == [
         sys.executable, "-m", "src.clean",
         "--in", "jobs/20261014-143000/raw", "--out", "jobs/20261014-143000/cleaned",
+        "--sanitize",  # daily output drops unpriced / out-of-market rows
     ]
     assert store == [sys.executable, "-m", "src.store", "--in", "jobs/20261014-143000/cleaned"]
     for stage in stages:

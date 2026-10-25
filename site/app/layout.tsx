@@ -101,7 +101,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             </div>
             <div>
               <h2 className="font-semibold text-zinc-100">Compliance</h2>
-              <p>Zillow robots-allowed paths only, 5s pacing (2s contractual floor), CAPTCHA = hard stop. Realtor.com excluded (scraping disallowed). A sample of NYC actives, not full-market coverage — production would use a licensed MLS feed.</p>
+              <p>Zillow robots-allowed paths only, 5s pacing (2s contractual floor), CAPTCHA = hard stop. Realtor.com excluded (scraping disallowed). Covers nearly all Zillow NYC actives; production would use a licensed MLS feed for completeness.</p>
             </div>
             <div>
               <h2 className="font-semibold text-zinc-100">Links &amp; roadmap</h2>

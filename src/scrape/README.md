@@ -10,6 +10,15 @@ retry, CAPTCHA detection), `robots.py` (the compliance gate), `proxy.py`
 (DataImpulse creds/URL/secret-scrubbing), `config.py` (constants only).
 `parsing/` holds the split-out parsers.
 
+**Full-corpus harvest (~22.7k rows).** `python -m src.scrape.harvest --out
+jobs/<run>/raw --session nyc-01` walks `config/nyc_zips.csv` (177 ZIPs) and
+follows each `/<borough>-ny-<zip>/` pagination chain, because one Zillow search
+cannot exceed ~820 of NYC's 22,756 results. It uses a headed Chromium session
+(`browser.py`) so the current soft-403/PX behaviour and manual CAPTCHA pauses
+are handled without losing the run (`harvest_state.json` is the resume ledger).
+Output is byte-compatible with `python -m src.clean --in .../raw`. Evidence and
+the 2026-10-23 probe: [jobs/harvest-probe/evidence/findings.md](../../jobs/harvest-probe/evidence/findings.md).
+
 **The one trap.** **Two robots gates run on purpose** — `robots.is_allowed_url()`
 on every request *and* `run._guard_redirect()` on redirect targets. They are
 deliberately not merged: the first rejects query strings (which would break

@@ -1,13 +1,15 @@
 // WHAT:   MARKET_REFERENCE (the disclosure denominator), marketSizeLabel
-//   ("~22.8k") and coverageNote() ("4.4% of ~22.8k Zillow NYC actives").
-// WHY:    to state how small our sample honestly is — it exists for ONE
-//   reason: a disclosure denominator, never a claim of coverage. The figure is
-//   the citywide active-listing count Zillow reported during the 2026-10-15
-//   stage-1 pre-check (jobs/smoke-scrape-20261015-084632/raw/process_log.md,
-//   "reports 22801 total results"). It is order-of-magnitude, disclosure-only:
-//   NOT derived from our dataset and not a property of any single run. The
-//   ingestion is capped by design (robots-allowed paths, 5s pacing, abort on
-//   any CAPTCHA challenge).
+//   ("~22.8k") and coverageNote() ("4.4% of ~22.8k Zillow NYC actives" when the
+//   cohort is small, "97.9% …" after the full harvest).
+// WHY:    to state how much of the market the current cohort covers. It exists
+//   for ONE reason: a disclosure denominator, never a claim of completeness.
+//   The figure is the citywide active-listing count Zillow reported during the
+//   2026-10-15 stage-1 pre-check
+//   (jobs/smoke-scrape-20261015-084632/raw/process_log.md, "reports 22801 total
+//   results"). It is order-of-magnitude, disclosure-only: NOT derived from our
+//   dataset and not a property of any single run. The daily ingestion is capped
+//   by design (robots-allowed paths, 5s pacing, abort on any CAPTCHA challenge),
+//   so the note must work at 4.5% and at 97.9% without changing wording.
 // Verified by: NOTHING (gap) — the disclosure-only rule is copy-level; no key
 //   asserts the denominator's provenance.
 // INPUTS: none — constants; coverageNote takes the tracked row count.
@@ -30,10 +32,11 @@ export const MARKET_REFERENCE = {
 export const marketSizeLabel = `~${(MARKET_REFERENCE.listings / 1000).toFixed(1)}k`;
 
 /**
- * `"4.4% of ~22.8k Zillow NYC actives"` — or `null` when there is nothing
- * honest to say (no data yet). One decimal under 10% so small slices stay
- * legible instead of rounding to a whole number; the rule itself is
- * fmtPct's `"adaptive"` mode (lib/format.ts), unchanged.
+ * `"4.4% of ~22.8k Zillow NYC actives"` (a daily cohort) or `"97.9% …"` (after
+ * a full harvest) — or `null` when there is nothing honest to say (no data
+ * yet). One decimal under 10% so small slices stay legible instead of rounding
+ * to a whole number; above that a whole percent reads better. The rule itself
+ * is fmtPct's `"adaptive"` mode (lib/format.ts), unchanged.
  */
 export function coverageNote(tracked: number | null | undefined): string | null {
   if (tracked == null || tracked <= 0) return null;

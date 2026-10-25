@@ -4,7 +4,7 @@
 > (HEAD of `main`, 2026-10-17) plus the *uncommitted* refactor work of Phases 0–3
 > and the Phase-5a `jobs/` cleanup ([REFACTOR_PLAN.md](REFACTOR_PLAN.md)).
 > Nothing has been committed; `git status` shows the whole reorganisation.
-> Verified **2026-10-22**: `pytest` **164 passed, 2 skipped** ·
+> Verified **2026-10-25**: `pytest` **178 passed** ·
 > `dashboard/verify_contract.py` **54/54** · all four CLIs `--help` exit 0.
 >
 > Orientation order for a new human/agent: **this file → the directory README
@@ -105,7 +105,7 @@ failure, loads `config/*.local.env` additively (real env wins).
 # Interpreter — conda env, no activation needed (see docs/decisions.md):
 PY=~/.anaconda3/envs/off-market-radar/bin/python
 
-$PY -m pytest -q                       # 164 passed, 2 skipped (2026-10-22)
+$PY -m pytest -q                       # 178 passed (2026-10-25)
 $PY dashboard/verify_contract.py        # 54 / 54, exit 0
 $PY scripts/run_daily.py               # full pipeline (needs config/*.local.env)
 $PY -m src.scrape --pages 5 --max-details 150 --out jobs/<run_id>/raw

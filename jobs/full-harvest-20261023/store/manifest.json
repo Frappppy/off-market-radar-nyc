@@ -1,0 +1,9 @@
+{
+  "stage": "store",
+  "run_id": "full-harvest-20261023",
+  "records_in": 22317,
+  "records_out": 22317,
+  "started_at": "2026-10-24T03:39:26+00:00",
+  "finished_at": "2026-10-24T03:39:49+00:00",
+  "status": "success"
+}

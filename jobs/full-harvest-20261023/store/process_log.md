@@ -1,0 +1,26 @@
+## src.store - run_id `full-harvest-20261023`
+- started_at: 2026-10-24T03:39:03+00:00
+- input: `jobs/full-harvest-20261023/cleaned` (listings_2026-10-23.parquet)
+- records_in: 22317
+- target: DATABASE_URL (value never logged)
+- schema: sql/schema.sql (idempotent)
+- pipeline_runs: status `running` -> `success`
+- listings upserted (ON CONFLICT source,listing_id): 22317
+- listing_snapshots upserted (ON CONFLICT source,listing_id,snapshot_date): 22317
+- records_scraped: 22577
+- listings marked inactive (missed 3 consecutive successful runs): 0
+- finished_at: 2026-10-24T03:39:22+00:00
+- status: `success`
+## src.store - run_id `full-harvest-20261023`
+- started_at: 2026-10-24T03:39:26+00:00
+- input: `jobs/full-harvest-20261023/cleaned` (listings_2026-10-23.parquet)
+- records_in: 22317
+- target: DATABASE_URL (value never logged)
+- schema: sql/schema.sql (idempotent)
+- pipeline_runs: status `running` -> `success`
+- listings upserted (ON CONFLICT source,listing_id): 22317
+- listing_snapshots upserted (ON CONFLICT source,listing_id,snapshot_date): 22317
+- records_scraped: 22577
+- listings marked inactive (missed 3 consecutive successful runs): 0
+- finished_at: 2026-10-24T03:39:49+00:00
+- status: `success`
