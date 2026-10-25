@@ -1,7 +1,8 @@
 """WHAT:      Stage-3 Postgres access — connection, idempotent upserts,
-           ``pipeline_runs`` bookkeeping, and stale-listing (``is_active``)
-           marking. SQL text itself lives in ``statements.py`` (re-imported
-           here, so ``db._MARK_STALE`` etc. still resolve).
+           ``pipeline_runs`` bookkeeping (start / finish / ``record_failed_run``
+           for runs that never reached this stage), and stale-listing
+           (``is_active``) marking. SQL text itself lives in ``statements.py``
+           (re-imported here, so ``db._MARK_STALE`` etc. still resolve).
 WHY:        One owner for every database side effect of stage 3; the CLI
            orchestrates, this module executes parameterized SQL only.
 INPUTS:     A DSN string (from ``get_database_url``: env wins, else the
@@ -9,12 +10,13 @@ INPUTS:     A DSN string (from ``get_database_url``: env wins, else the
            ``mapping``.
 OUTPUTS:    Upserted/mutated rows; row counts returned to the CLI for the
            process log; ``StoreError`` on connection/config failures.
-CALLERS:    ``src.store.cli``; SQL-text assertions in
+CALLERS:    ``src.store.cli``, ``src.store.record``; SQL-text assertions in
             ``tests/test_schema_sqlglot.py``, ``tests/test_store_db.py``,
            ``tests/test_store_stale.py`` (via ``db.*``).
 TESTED BY:  ``tests/test_store_db.py`` (redaction, DSN precedence),
            ``tests/test_schema_sqlglot.py`` (upsert semantics incl.
-           ``_START_RUN``), ``tests/test_store_stale.py`` (mark-stale).
+           ``_START_RUN``, ``test_record_failure_sql_never_overwrites_a_terminal_run``),
+           ``tests/test_store_stale.py`` (mark-stale).
 
 All queries are parameterized (psycopg3 %s placeholders) — no string-built SQL.
 Secrets: DATABASE_URL only ever read from env / gitignored config file; it is
@@ -25,6 +27,7 @@ from __future__ import annotations
 
 import os
 import re
+from datetime import datetime
 from pathlib import Path
 from typing import Sequence
 
@@ -36,6 +39,7 @@ from .statements import (
     _INSERT_LISTING,
     _INSERT_SNAPSHOT,
     _MARK_STALE,
+    _RECORD_FAILURE,
     _START_RUN,
     STALE_RUNS,
 )
@@ -132,6 +136,29 @@ def finish_pipeline_run(
         cur.execute(_FINISH_RUN, (status, records_scraped, records_loaded, notes, run_id))
 
 
+def record_failed_run(
+    conn: psycopg.Connection,
+    run_id: str,
+    *,
+    source: str | None = None,
+    note: str | None = None,
+    started_at: datetime | None = None,
+) -> None:
+    """Make one failed run VISIBLE in pipeline_runs (see ``_RECORD_FAILURE``).
+
+    Safe to call at any time for any run_id: it inserts a `failed` row when the
+    run never reached stage 3, closes a row left `running` by a crash, and is a
+    no-op on a row stage 3 already finished — so the orchestrator can call it
+    after a failed stage without ever clobbering a more precise note.
+    Verified by: test_record_failure_sql_never_overwrites_a_terminal_run
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            _RECORD_FAILURE,
+            (run_id, started_at, source, redact_dsn(note) if note else None),
+        )
+
+
 # --- stale-listing marking ---------------------------------------------------
 
 
@@ -158,6 +185,7 @@ __all__ = [
     "finish_pipeline_run",
     "get_database_url",
     "mark_stale_listings",
+    "record_failed_run",
     "redact_dsn",
     "start_pipeline_run",
     "upsert_listings",

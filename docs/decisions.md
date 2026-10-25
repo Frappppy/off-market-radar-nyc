@@ -114,10 +114,23 @@ roughly double. Comments count toward the budget (a 200-line body + a 15-line
 T0 header is over target, not over the cap). **Why:** the plan's first goal is
 no hallucination — a file whose whole contract fits one screen is auditable, and
 `Verified by:` anchors are only credible if the rule they anchor is visible
-above them. **Consequences (verified 2026-10-21):** largest `src/` file = 200
-lines (`src/scrape/parsing/record.py`), largest site file = 199
-(`site/components/status/IngestionHealth.tsx`); splitting a file means a
-behaviour-preserving move (golden-dump gate), never a rewrite.
+above them. **Consequences (re-measured 2026-10-25):** the cap is a review
+convention, not a gate — `scripts/check_headers.py` enforces headers and anchors
+only, so the numbers have to be stated honestly instead. Largest `src/` files
+are now `scrape/browser.py` (373) and `scrape/harvest.py` (321), both **over the
+hard cap**; they grew with the full-corpus harvest and the payload-based block
+detection, and neither has a clean behaviour-preserving seam (`browser.py` is one
+`BrowserSession` whose challenge/wait methods share `self` state). Tests:
+`test_scrape.py` 263 and `test_store_flow.py` 258 after the 2026-10-25 splits
+(`test_scrape_block.py`, `test_scrape_robots_snapshot.py`,
+`test_store_record_failure.py`); largest site files are
+`site/components/filters/Filters.tsx` (206) and
+`site/components/status/IngestionHealth.tsx` (205) — over target, inside the cap;
+`scripts/run_daily.py` sits at 297, under the cap but over target. **Open work, recorded not hidden:**
+splitting the two `src/scrape` files needs a real seam (or the §10 exemption
+widened), and no split should happen without the offline suite staying green
+before and after. Splitting a file means a behaviour-preserving move
+(golden-dump gate), never a rewrite.
 
 ## 8. The 11 "duplicates" that were deliberately different (Phase 1 finding)
 
@@ -167,9 +180,9 @@ git-recoverable (`git checkout -- <path>`).
 
 **Context.** D1 (§7) targets ≤ 200 lines per file, hard cap 300. Exactly three
 files breach it and cannot be split honestly: `scripts/tier1_migration_check.py`
-(459 ln), its bootstrapper `scripts/tier1_migration_check.ps1`, and
-`scripts/live_db_check.ps1` (~1,254 ln together). They hold the repo's **only
-real-database verification** — assertions A–G executed against an ephemeral
+(460 ln), its bootstrapper `scripts/tier1_migration_check.ps1` (248), and
+`scripts/live_db_check.ps1` (523) — ~1,231 ln together. They hold the repo's
+**only real-database verification** — assertions A–G executed against an ephemeral
 PostgreSQL — and this environment cannot run them (Linux, no Windows, no
 Postgres; the `.ps1` wrappers boot a Windows-only local cluster).
 **Decision (user call, 2026-10-22):** keep all three as-is and record a narrow
@@ -182,8 +195,8 @@ Windows + PostgreSQL runs them; a refactor with no gate is exactly what the
 "no behaviour changes" ground rule forbids. The 459 lines are a known cost; an
 unverifiable split is an unknown one. **Consequences:** the exemption names
 exactly these three Windows/real-DB paths — every other script (e.g.
-`scripts/run_daily.py`, 266) stays subject to D1's caps, and the line counts
-are recorded so drift stays visible. If a Windows/Postgres environment ever
+`scripts/run_daily.py`, 297 as of 2026-10-25) stays subject to D1's caps, and the
+line counts are recorded so drift stays visible. If a Windows/Postgres environment ever
 runs this suite (e.g. via CI), the exemption should be revisited and the split
 re-proposed — documented, not forgotten.
 

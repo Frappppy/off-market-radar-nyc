@@ -11,7 +11,7 @@ WHY:       The contract is hand-maintained while the pipeline executes its own
 INPUTS:    docs/data_contract.md, sql/schema.sql, src.clean/frame.py,
            src/store/mapping.py.
 OUTPUTS:   pytest verdicts only.
-CALLERS:   `python -m pytest` — suite baseline: 155 passed, 2 skipped.
+CALLERS:   `python -m pytest` — the current suite count lives in tests/README.md.
 """
 
 import re

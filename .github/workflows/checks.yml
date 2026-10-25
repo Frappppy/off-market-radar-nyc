@@ -1,14 +1,20 @@
-# WHAT:      CI checks workflow — T0-header guardrail, pytest suite, and the
-#            54-check data-contract verification, on every push and PR.
+# WHAT:      CI checks workflow — the static gates (ruff, mypy), the T0-header
+#            guardrail, the pytest suite and the 54-check data-contract
+#            verification, on every push and PR.
 # WHY:       Phase-6 guardrail (REFACTOR_PLAN §5): stop the reorganised tree
-#            rotting back — a dropped header, a broken test, or contract drift
-#            fails the push/PR instead of waiting for the next 10:00 UTC run.
+#            rotting back — a dropped header, an unused import, a type error, a
+#            broken test, or contract drift fails the push/PR instead of waiting
+#            for the next 10:00 UTC run.
 #            Runs on windows-latest with the same venv install as
 #            daily_pipeline.yml so the two workflows share one environment
-#            story; deliberately holds NO credentials — checks need none,
+#            story; requirements-dev.txt (ruff + mypy) is installed here ONLY —
+#            the nightly job's env stays runtime-only. Deliberately holds NO
+#            credentials — checks need none, and without config/*.local.env the
+#            two DataImpulse-credential tests skip (214 passed, 2 skipped),
 #            pinned by the no-secrets guard in tests/test_workflow_yaml.py.
 #            Verified by: tests/test_workflow_yaml.py (test_checks_workflow_*).
-# INPUTS:    this checkout + requirements.txt. No credentials.
+# INPUTS:    this checkout + requirements.txt + requirements-dev.txt (ruff,
+#            mypy). No credentials.
 # OUTPUTS:   one checks run per push/PR; any failed step fails the job.
 # CALLERS:   GitHub Actions (push, pull_request); humans via workflow_dispatch
 #            is intentionally absent to stay minimal.
@@ -42,6 +48,19 @@ jobs:
 
       - name: Install dependencies
         run: .venv\Scripts\python.exe -m pip install -r requirements.txt
+
+      - name: Install dev tools (ruff, mypy)
+        run: .venv\Scripts\python.exe -m pip install -r requirements-dev.txt
+
+      # Static gates first: they are the cheapest and they fail on text, not on
+      # data. Both rulesets are pinned in pyproject.toml at the level this tree
+      # passes clean (ruff default E4/E7/E9+F; mypy over src), so a red step here
+      # is always a new defect and never pre-existing noise.
+      - name: Lint (ruff)
+        run: .venv\Scripts\python.exe -m ruff check src scripts tests dashboard
+
+      - name: Typecheck (mypy src)
+        run: .venv\Scripts\python.exe -m mypy src
 
       - name: Check T0 headers
         run: .venv\Scripts\python.exe scripts/check_headers.py

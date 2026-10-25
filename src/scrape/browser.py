@@ -11,10 +11,16 @@ WHY:        Zillow now answers with HTTP 403 *and* a fully server-rendered page:
 INPUTS:     Profile dir, proxy dict (from ``proxy.build_browser_proxy``),
            pacing/timeout knobs.
 OUTPUTS:    ``FetchPage`` per navigation; ``challenged``/``waited_s`` tell the
-           caller a human interaction happened.
+           caller a human interaction happened; ``error`` is ``None`` whenever a
+           usable payload came back (harvest reads any non-empty error as a
+           shard failure and used to discard good pages that had retried once).
+           Raises ``ValueError`` on a URL the robots gate refuses, before it
+           navigates.
 CALLERS:    ``src.scrape.harvest``.
-TESTED BY:  ``tests/test_harvest.py::test_payload_detection_*`` (parser-level;
-           live browser paths are smoke-tested, not unit-tested).
+TESTED BY:  ``tests/test_harvest.py::test_payload_detection_search_and_detail``
+           (the shared rule now lives in ``parsing/payload.py``) and
+           ``tests/test_harvest.py::test_blocked_page_rotates_proxy_and_retries``;
+           live browser paths are smoke-tested, not unit-tested.
 """
 
 from __future__ import annotations
@@ -29,8 +35,9 @@ from playwright.sync_api import TimeoutError as PlaywrightTimeout
 from playwright.sync_api import sync_playwright
 
 from ..common.timeutil import utc_now_iso
-from .parsing import extract_detail_property, parse_search_page
+from .parsing import page_payload_kind
 from .proxy import scrub_secrets
+from .robots import is_allowed_url, redirect_refusal
 
 BLOCKED_RESOURCE_TYPES = {"image", "media", "font"}
 BLOCKED_HOST_PARTS = (
@@ -53,24 +60,6 @@ def _dismiss_notice(page):
                 return
         except (PlaywrightError, PlaywrightTimeout):
             continue
-
-
-def page_payload_kind(html, expect=None):
-    """``"search"`` / ``"detail"`` when the expected embedded JSON is usable,
-    else ``None``. ``expect`` restricts the check to one kind."""
-    if not html:
-        return None
-    if expect in (None, "search"):
-        try:
-            parsed = parse_search_page(html)
-            if parsed.listings:
-                return "search"
-        except ValueError:
-            pass
-    if expect in (None, "detail"):
-        if extract_detail_property(html) is not None:
-            return "detail"
-    return None
 
 
 @dataclass
@@ -293,6 +282,11 @@ class BrowserSession:
     # --- fetch ---------------------------------------------------------------
 
     def fetch(self, url, expect=None, max_attempts=2):
+        # Gate 1 runs here too, not only in the callers. Until 2026-10-25 this
+        # path relied on harvest remembering to check, and never inspected the
+        # redirect target at all — `page.url` was handed back unvalidated.
+        if not is_allowed_url(url):
+            raise ValueError(f"refusing URL outside robots-allowed Zillow paths: {url}")
         self.start()
         page = self._page
         audit = []
@@ -330,9 +324,21 @@ class BrowserSession:
             audit.append({"url": url, "status": status, "fetched_at": fetched_at})
             kind = page_payload_kind(html, expect=expect)
             if kind:
+                refusal = redirect_refusal(url, page.url)
+                if refusal:
+                    # blocked=False: a policy refusal must not send harvest into
+                    # its IP-rotation loop, which retries the same refused URL.
+                    return FetchPage(url=url, status=status, final_url=page.url,
+                                     html="", fetched_at=fetched_at,
+                                     error=refusal, challenged=challenged,
+                                     blocked=False, waited_s=waited,
+                                     attempts=attempt, audit=audit)
+                # A usable page is not a failure. `error` can still hold an
+                # earlier attempt's exception, and harvest reads any non-empty
+                # error as a shard failure — so good pages were discarded here.
                 return FetchPage(url=url, status=status, final_url=page.url,
                                  html=html, fetched_at=fetched_at,
-                                 error=error, challenged=challenged,
+                                 error=None, challenged=challenged,
                                  waited_s=waited, attempts=attempt, audit=audit)
             if self._challenge_visible():
                 challenged = True
@@ -345,6 +351,10 @@ class BrowserSession:
                 html, spent = self._wait_for_human(expect)
                 waited += spent
                 if html is not None:
+                    refusal = redirect_refusal(url, page.url)
+                    if refusal:
+                        error = refusal
+                        break
                     status = 200
                     return FetchPage(url=url, status=status, final_url=page.url,
                                      html=html, fetched_at=fetched_at,

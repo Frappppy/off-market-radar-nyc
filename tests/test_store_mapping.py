@@ -8,7 +8,7 @@ WHY:       The stage-3 INSERTs interpolate these tuples POSITIONALLY (REPO_MAP
            against dict/pandas inputs only — no live DB.
 INPUTS:    synthetic cleaned rows + src.store.mapping.
 OUTPUTS:   pytest verdicts only.
-CALLERS:   `python -m pytest` — suite baseline: 155 passed, 2 skipped.
+CALLERS:   `python -m pytest` — the current suite count lives in tests/README.md.
 """
 
 from datetime import date, datetime, timezone

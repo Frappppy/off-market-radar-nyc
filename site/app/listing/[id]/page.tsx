@@ -5,42 +5,33 @@
 //           link back to the explorer, with honest loading / error /
 //           not-found states.
 // WHY:      D3 — the SideCard is the quick look that opens from a pin or a
-//           table row; this page is the linkable one. It reuses the existing
-//           GET /api/listing/[id]?source=… (via hooks/useListingHistory) and
-//           finds the row through GET /api/deals — no new endpoint and no
-//           server-side DB read, so it follows the house pattern of client
-//           pages fetching from /api/* (REFACTOR_PLAN §5 Phase 3).
-// INPUTS:   route param `id` + optional `?source=` (the history API is keyed
-//           on (source, listing_id); default zillow); the WIDE_QUERY cohort
-//           below; the listing's daily history series.
+//           table row; this page is the linkable one. Everything it shows —
+//           the current row and the daily series — now comes from the ONE
+//           GET /api/listing/[id]?source=… request (hooks/useListingHistory),
+//           which the route answers with a two-parameterised SQL read of
+//           vw_latest_listings. It used to find the row by asking /api/deals
+//           for the entire cohort (limit=5000, window_days=3650) and scanning
+//           for its own id: every property page transferred the whole database
+//           to render one listing.
+// INPUTS:   route param `id` + optional `?source=` (the API is keyed on
+//           (source, listing_id); default zillow); the history response's row,
+//           series, dataset_latest_snapshot_date and `live` flag.
 // OUTPUTS:  the rendered page — exactly one h1 (the address, or the id while
 //           it is still loading or missing), h2 sections after it.
 // CALLERS:  the Next.js router; linked from components/listings/SideCard
 //           ("Open full page →"), which is what keeps the side panel as-is.
 // Verified by: shots/phase3-runtime-gate.json → listing.h1Count (1) +
 //   listing.headingSeq (["H1","H2","H2"]) — the OUTPUTS rule above.
-import { Suspense, useMemo } from "react";
+import { Suspense } from "react";
 import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
 import ScorePill from "@/components/listings/ScorePill";
 import PriceHistoryBlock from "@/components/listings/PriceHistoryBlock";
-import { useDeals } from "@/hooks/useDeals";
+import CohortSource from "@/components/status/CohortSource";
 import { useListingHistory } from "@/hooks/useListingHistory";
 import { useShortlist } from "@/lib/shortlist";
 import { daysSince, isCarriedOver, lastSeenLabel } from "@/lib/dates";
 import { fmtMoney, fmtPct } from "@/lib/format";
-
-// ---- the wide cohort: a link must resolve regardless of filters ----
-// The WHOLE cohort — every score, no DOM floor, the widest recency window the
-// API clamps to (3650) — so any row in the dataset can be found by id,
-// including one whose score/age the default map filter (High+Medium, DOM≥60)
-// hides. A shareable link must open the listing it names, whatever the
-// visitor's filter state is; the default window of 1 day would 404-in-effect
-// every listing older than the newest run.
-const WIDE_QUERY = "score=High%2CMedium%2CLow&min_dom=0&window_days=3650&limit=5000";
-// Verified by: shots/phase3-runtime-gate.json → data_panel.navigatedToListing
-//   → listing.h1Count (the named id renders a page); the filter-independence
-//   half is NOT keyed (gap).
 
 const backBtn =
   "inline-flex rounded border border-zinc-700 px-2 py-1 text-sm text-zinc-100 underline focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1 focus-visible:outline-zinc-400";
@@ -50,23 +41,18 @@ function ListingInner() {
   const sp = useSearchParams();
   const source = sp.get("source") ?? "zillow";
 
-  const { deals, latestSnapshotDate, loaded, loadError } = useDeals(WIDE_QUERY);
   const hist = useListingHistory(id, source);
-  const deal = useMemo(
-    () =>
-      deals.find((d) => d.listing_id === id && d.source === source) ??
-      deals.find((d) => d.listing_id === id) ??
-      null,
-    [deals, id, source]
-  );
+  const deal = hist.deal;
   const { saved, toggle } = useShortlist(deal);
 
   // ---- states: loading | failed | not-found are three sentences ----
   // A shared link must not claim a result before there is one (the same
   // tri-state rule /data and /trends run on): loading, failed fetch, and
   // "loaded but no such id" are three different sentences.
+  // The row and the series share this one request, so all three states are read
+  // off `hist.status` — there is no second fetch that could still be pending.
   // Verified by: NOTHING (gap) — the gate exercises the loaded listing only.
-  if (loadError) {
+  if (hist.status === "error") {
     return (
       <div className="space-y-3">
         <h1 className="text-2xl font-bold tracking-tight text-zinc-50">Listing {id}</h1>
@@ -75,7 +61,7 @@ function ListingInner() {
       </div>
     );
   }
-  if (!loaded) {
+  if (hist.status === "loading") {
     return (
       <div className="space-y-3">
         <h1 className="text-2xl font-bold tracking-tight text-zinc-50">Listing {id}</h1>
@@ -87,9 +73,17 @@ function ListingInner() {
     return (
       <div className="space-y-3">
         <h1 className="text-2xl font-bold tracking-tight text-zinc-50">Listing {id}</h1>
-        <div className="panel p-4 text-sm text-zinc-400">
-          This listing isn&apos;t in the loaded dataset — the id may be mistyped, or the listing aged out of
-          the data we hold.
+        <div className="panel space-y-1 p-4 text-sm text-zinc-400">
+          <p>
+            This listing isn&apos;t in the dataset — the id may be mistyped, or the listing aged out of
+            the data we hold.
+          </p>
+          {/* "the dataset" means something different when the search fell back
+              to the bundled sample: 82 rows, not the full ledger, so most ids
+              legitimately miss. Say which one was searched.
+              Verified by: NOTHING (gap) — no key forces live:false with an
+              unknown id to read this line. */}
+          <CohortSource live={hist.live} suffix="these results" />
         </div>
         <Link href="/map" className={backBtn}>← Back to the explorer</Link>
       </div>
@@ -98,12 +92,12 @@ function ListingInner() {
 
   const addr = deal.address ?? deal.listing_id;
   const drop = deal.price_drop_pct != null ? fmtPct(deal.price_drop_pct) : "—";
-  // Freshness reference: the newest snapshot across the wide cohort when the
-  // payload has one, else this listing's own newest — data, never the browser
-  // clock, so the label stays correct on a cached page or a wrong clock.
+  // Freshness reference: the newest snapshot in the dataset when the payload has
+  // one, else this listing's own newest — data, never the browser clock, so the
+  // label stays correct on a cached page or a wrong clock.
   // Verified by: TS — daysSince takes YYYY-MM-DD strings only (lib/dates.ts);
   //   no Date.now() input exists on this path.
-  const age = daysSince(deal.snapshot_date, latestSnapshotDate ?? hist.latest);
+  const age = daysSince(deal.snapshot_date, hist.datasetLatest ?? hist.latest);
   const lastSeen = lastSeenLabel(age);
   const carriedOver = isCarriedOver(age);
 
@@ -111,7 +105,16 @@ function ListingInner() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="eyebrow">Listing · {deal.source}</p>
+          <p className="eyebrow">
+            Listing · {deal.source}{" "}
+            {/* The numbers here and the price-history section below come from
+                the SAME response, so one pill covers both: live:false means
+                Neon did not answer and the bundled sample supplied the row (the
+                series is then empty, and PriceHistoryBlock says so itself).
+                Verified by: NOTHING (gap) — no key forces live:false to read
+                the pill on a resolved listing. */}
+            <CohortSource live={hist.live} suffix="these numbers" />
+          </p>
           <h1 className="mt-1 break-words text-2xl font-bold tracking-tight text-zinc-50">{addr}</h1>
           <p className="mt-1 flex flex-wrap items-center gap-2 text-xs text-zinc-400">
             <ScorePill score={deal.motivation_score} />

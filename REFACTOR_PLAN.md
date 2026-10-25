@@ -3,8 +3,9 @@
 > **Companion to [`REPO_MAP.md`](REPO_MAP.md)** — read the map first for *what exists today*;
 > this file is *what we are going to do about it*.
 >
-> **Status:** ALL PHASES COMPLETE (2026-10-22): Phase 0 ✅ · Phase 1 ✅ · Phase 2 ✅ · Phase 3 ✅ · Phase 4 (4-P/4-S/4-D/4-E) ✅ · Phase 5 ✅ (jobs orphans + test_clean split) · Phase 6 ✅ (CI + header/anchor check + REPO_MAP decision). Final gates: **164 passed, 2 skipped · 54/54 contract · check_headers exit 0 (headers + anchors) · typecheck + build clean.** Nothing committed — the whole reorganisation sits uncommitted in `git status` by design.
-> **Baseline:** commit `6be2c61` on `main`.
+> **Status:** ALL PHASES COMPLETE (2026-10-22) and **committed**. Phase 0 ✅ · Phase 1 ✅ · Phase 2 ✅ · Phase 3 ✅ · Phase 4 (4-P/4-S/4-D/4-E) ✅ · Phase 5 ✅ (jobs orphans + test_clean split) · Phase 6 ✅ (CI + header/anchor check + REPO_MAP decision). The reorganisation itself landed as `4668dfb` → `1c5c047` (2026-10-22), the guardrail workflow as `4e716f1`, followed by the Tier-1 hardening commits through `f446e67`. Gates at completion: **164 passed, 2 skipped · 54/54 contract · check_headers exit 0 (headers + anchors) · typecheck + build clean.**
+> **Re-verified 2026-10-25** on the current working tree (the post-review fix pass, uncommitted by design until the owner pushes): **216 passed · 54/54 contract · check_headers exit 0 · `ruff check` + `mypy src` clean · tsc + next build clean.**
+> **Baseline:** commit `6be2c61` on `main` (what the plan was written against).
 
 ---
 

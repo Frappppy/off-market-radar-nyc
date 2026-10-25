@@ -5,8 +5,9 @@
 //           LISTING_HISTORY_QUERY straight out of this file.
 // INPUTS:   none at import time — these are parameterised text constants.
 // OUTPUTS:  ZIPS, META_RUN, META_SNAPSHOT (/api/zips, /api/meta),
-//           LISTING_HISTORY (/api/listing/[id]), HEALTH (/api/health), all over
-//           the dashboard/views.sql views + pipeline_runs.
+//           LISTING_HISTORY + LISTING_DETAIL (/api/listing/[id]),
+//           HEALTH (/api/health), all over the dashboard/views.sql views +
+//           pipeline_runs.
 // CALLERS:  app/api/{zips,meta,listing/[id],health}/route.ts. The deals query
 //           is built dynamically in db/deals-query.ts instead.
 
@@ -54,6 +55,39 @@ export const LISTING_HISTORY_QUERY = `
   FROM vw_listing_history
   WHERE source = $1 AND listing_id = $2
   ORDER BY snapshot_date ASC
+`;
+
+// One listing's CURRENT row — the detail the /listing/[id] page renders above
+// the history series (address, ZIP, price, score, the Zillow URL: none of which
+// vw_listing_history carries). It reads vw_latest_listings, the same view
+// /api/deals reads, so the page and the map can never describe one listing two
+// ways.
+//
+// WHY IT EXISTS: the page used to resolve the row by asking /api/deals for the
+// WHOLE cohort (window_days=3650, limit=5000 — the export ceiling) and
+// scanning it for the id: one property page transferred every listing in the
+// database to find itself. This is one indexed row instead.
+// `ORDER BY (source = $1) DESC` keeps the old two-step search: the requested
+// source first, any other source holding that id second, so a link with a wrong
+// `?source=` still opens the listing rather than 404-in-effect.
+// The trailing scalar is the dataset's own newest snapshot — the reference the
+// page ages "last seen N days ago" against, which used to come off the wide
+// cohort payload.
+// Verified by: NOTHING (gap) — no key runs this SQL; the view columns it needs
+//   are pinned by dashboard/verify_contract.py CHECK 2 (reference parity).
+export const LISTING_DETAIL_QUERY = `
+  SELECT source, listing_id, address, city, zip, latitude, longitude,
+         property_type, price, days_on_market,
+         price_per_sqft::float8 AS price_per_sqft,
+         price_drop_pct::float8 AS price_drop_pct,
+         motivation_score, motivation_reason,
+         snapshot_date::text AS snapshot_date, url,
+         (SELECT max(snapshot_date)::text FROM vw_latest_listings)
+           AS dataset_latest_snapshot_date
+  FROM vw_latest_listings
+  WHERE listing_id = $2
+  ORDER BY (source = $1) DESC
+  LIMIT 1
 `;
 
 // Ingestion health card (roadmap 1.4) — every aggregate in SQL, one round trip

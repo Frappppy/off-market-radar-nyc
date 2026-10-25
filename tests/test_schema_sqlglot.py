@@ -7,7 +7,7 @@ WHY:       The store stage applies schema.sql on EVERY run; a broken or
 INPUTS:    sql/schema.sql, sql/migrations/2026-10-16_tier1_is_active.sql,
            dashboard/views.sql, src.store.db statement constants.
 OUTPUTS:   pytest verdicts only.
-CALLERS:   `python -m pytest` — suite baseline: 155 passed, 2 skipped.
+CALLERS:   `python -m pytest` — the current suite count lives in tests/README.md.
 """
 
 from pathlib import Path
@@ -57,6 +57,34 @@ def test_upsert_semantics_sql_matches_contract():
     assert "ON CONFLICT (source, listing_id, snapshot_date) DO UPDATE" in db._INSERT_SNAPSHOT
     assert "ON CONFLICT (run_id) DO UPDATE" in db._START_RUN
     assert "'running'" in db._START_RUN
+
+
+def test_record_failure_sql_never_overwrites_a_terminal_run():
+    """The orchestrator's failure channel must be safe to call any time.
+
+    `--record-failure` runs after ANY failed stage, including stage 3 itself,
+    so the statement has to insert a row when none exists, close a row left
+    `running`, and change NOTHING about a row already `success`/`failed` —
+    otherwise a month of runs would be re-labelled, or a successful run turned
+    into a failure.
+    """
+    import sqlglot
+
+    from src.store import db
+
+    sql = db._RECORD_FAILURE
+    assert "INSERT INTO pipeline_runs" in sql
+    assert "ON CONFLICT (run_id) DO UPDATE" in sql
+    assert "'failed'" in sql
+    # only a row still marked 'running' may be flipped by the recorder
+    assert "CASE WHEN pipeline_runs.status = 'running'" in sql
+    assert "ELSE pipeline_runs.status END" in sql
+    # an existing note (stage 3's own, more precise one) wins
+    assert "COALESCE(pipeline_runs.notes, EXCLUDED.notes)" in sql
+    assert "COALESCE(pipeline_runs.finished_at, now())" in sql
+    # 4 placeholders: run_id, started_at, source, notes
+    assert sql.count("%s") == 4
+    assert sqlglot.parse_one(sql, dialect="postgres") is not None
 
 
 def test_schema_declares_is_active_column():

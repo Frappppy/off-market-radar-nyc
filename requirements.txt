@@ -1,16 +1,29 @@
-﻿anyio==4.15.1
-beautifulsoup4==4.15.0
+# WHAT:    the pinned runtime environment for the pipeline, its tests and CI.
+# WHY:     generated from a working `pip freeze` and then HAND-PRUNED on
+#          2026-10-25: requests, httpx (+ h11/httpcore/anyio/idna), SQLAlchemy,
+#          beautifulsoup4 (+ soupsieve/charset-normalizer) and lxml were
+#          installed-but-never-imported — `grep -rn "^\s*(import|from) (requests|
+#          httpx|sqlalchemy|bs4|lxml)" src scripts tests dashboard` returns
+#          nothing, and the HTTP path is curl_cffi only.
+#          Kept on purpose: colorama (pytest requires it on win32 and both
+#          workflows run on windows-latest; it is absent from this Linux env, so
+#          pip resolves it there), plus every transitively-required pin
+#          (certifi/cffi/pycparser <- curl_cffi; numpy/python-dateutil/six/tzdata
+#          <- pandas; iniconfig/packaging/pluggy/Pygments <- pytest;
+#          typing_extensions <- psycopg on Python < 3.13). greenlet and pyee were
+#          added: playwright requires them and the old freeze silently omitted
+#          them, so the file was never the complete env it claimed to be.
+# INPUTS:  install with `python -m pip install -r requirements.txt` (both
+#          workflows do exactly that, then requirements-dev.txt for the gates).
+# OUTPUTS: one resolved environment for Python 3.11-3.14.
+# CALLERS: .github/workflows/{checks,daily_pipeline}.yml, README quickstart,
+#          scripts/live_db_check.ps1. Dev tools live in requirements-dev.txt.
 certifi==2026.7.22
 cffi==2.1.1
-charset-normalizer==3.5.2
 colorama==0.4.6
 curl_cffi==0.16.3
-h11==0.16.0
-httpcore==1.0.9
-httpx==0.28.1
-idna==3.20
+greenlet==3.3.2
 iniconfig==2.3.1
-lxml==6.1.3
 numpy==2.5.4
 packaging==26.3
 pandas==3.0.6
@@ -20,15 +33,12 @@ psycopg==3.3.6
 psycopg-binary==3.3.6
 pyarrow==26.0.0
 pycparser==3.11
+pyee==14.0.0
 Pygments==2.21.0
 pytest==9.1.1
 python-dateutil==2.9.0.post0
 python-dotenv==1.2.4
-requests==2.34.2
 six==1.17.0
-soupsieve==3.0.3
-SQLAlchemy==2.1.4
 sqlglot==30.22.0
 typing_extensions==4.16.0
 tzdata==2026.5
-urllib3==2.8.0

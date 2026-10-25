@@ -3,6 +3,10 @@
 //   ShareLink and FilterNotices.
 // WHY:    the single place a view is composed; its accessibility fixes (S5/S6)
 //   and the two disabled "Zillow/USA/New York" selects are explained inline.
+//   Two behavioural rules live here now: the DOM slider commits on release
+//   (hooks/useCommittedRange.ts) so one drag is one /api/deals call instead of
+//   one per step, and the Type select always carries its own current value so
+//   a `?type=` the curated list does not contain cannot render as "Any".
 // INPUTS: `value` (FilterState from lib/useFilters), onChange/onReset
 //   callbacks, and the shown/total row counts from the caller's fetch.
 // OUTPUTS: the <aside> panel; every change goes through onChange (the caller
@@ -13,6 +17,7 @@
 import { useId } from "react";
 import FilterNotices from "./FilterNotices";
 import ShareLink from "./ShareLink";
+import { useCommittedRange } from "@/hooks/useCommittedRange";
 import type { MotivationScore } from "@/lib/api-types";
 import type { FilterState } from "@/lib/filters";
 import { SCORES } from "@/lib/scores";
@@ -48,6 +53,9 @@ export default function Filters({
     const has = value.score.includes(s);
     onChange({ score: has ? value.score.filter((x) => x !== s) : [...value.score, s] });
   };
+  // The DOM slider is the one control a reader drags, and every committed value
+  // is a /api/deals round trip — drag commits on release, keyboard per step.
+  const dom = useCommittedRange(value.minDom, (minDom) => onChange({ minDom }));
   // ---- render: counts + ShareLink + notices, then the control stack ----
   return (
     <aside className="panel space-y-3 p-3 text-sm text-zinc-200">
@@ -125,16 +133,20 @@ export default function Filters({
             FilterNotices above, so it reads the same here and on /. */}
       </div>
       <div>
-        <label htmlFor={id("dom")} className="font-medium text-zinc-100">DOM ≥ {value.minDom} days</label>
+        <label htmlFor={id("dom")} className="font-medium text-zinc-100">DOM ≥ {dom.value} days</label>
         {/* S6 — the range input's own box was 16px tall.
             Verified by: shots/phase3-runtime-gate.json →
             data_keyboard.rangeOperable (rangeFrom 60 → rangeTo 65); the 16px
-            figure is QA-sweep evidence, not a gate key. */}
+            figure is QA-sweep evidence, not a gate key.
+            Performance: `dom.handlers` keeps the thumb live while dragging and
+            writes the URL (→ one /api/deals) on release instead of once per
+            step — see hooks/useCommittedRange.ts. Keyboard still commits per
+            keypress. */}
         <input
           id={id("dom")}
           className="mt-0.5 h-6 w-full"
-          type="range" min={0} max={180} step={5} value={value.minDom}
-          onChange={(e) => onChange({ minDom: Number(e.target.value) })}
+          type="range" min={0} max={180} step={5}
+          {...dom.handlers}
         />
       </div>
       <div className="grid grid-cols-2 gap-2">
@@ -157,6 +169,17 @@ export default function Filters({
       </div>
       <div>
         <label htmlFor={id("type")} className="font-medium text-zinc-100">Type</label>
+        {/* A <select> can only show a value it has an <option> for. TYPES is a
+            fixed display list, but `?type=` comes straight from the URL and the
+            data is not guaranteed to fit the list (every value in the bundled
+            sample does; Zillow's homeType strings vary by market, and a shared
+            link can carry any string at all). A value with no matching option
+            rendered the control as "Any" while the filter WAS applied — the
+            panel then showed "10 of 82" for a cohort the reader could not see,
+            edit or clear. The current value is therefore added as its own
+            option when the list lacks it; the list itself stays curated.
+            Verified by: NOTHING (gap) — no key loads /map with a type outside
+            TYPES and reads the select back. */}
         <select
           id={id("type")}
           className="mt-1 w-full rounded border border-zinc-700 bg-zinc-950 p-1"
@@ -164,7 +187,9 @@ export default function Filters({
           onChange={(e) => onChange({ type: e.target.value || null })}
         >
           <option value="">Any</option>
-          {TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+          {(value.type && !TYPES.includes(value.type) ? [value.type, ...TYPES] : TYPES).map((t) => (
+            <option key={t} value={t}>{t}</option>
+          ))}
         </select>
       </div>
       <div>

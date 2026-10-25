@@ -6,7 +6,7 @@ WHY:       The loader decides what the store stage actually ingests; its file
            pinned here with tmp_path files only (no live DB).
 INPUTS:    tmp_path fixtures + src.store.loader.
 OUTPUTS:   pytest verdicts only.
-CALLERS:   `python -m pytest` — suite baseline: 155 passed, 2 skipped.
+CALLERS:   `python -m pytest` — the current suite count lives in tests/README.md.
 """
 
 import json

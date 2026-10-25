@@ -1,7 +1,7 @@
 "use client";
 // WHAT:     the ONE /api/deals request path — `useDeals(query, options)` fetches
-//           `/api/deals?${query}` and returns the tri-state the explorer pages
-//           render from: { deals, latestSnapshotDate, loaded, loadError }.
+//           `/api/deals?${query}` and returns the state the explorer pages
+//           render from: { deals, latestSnapshotDate, loaded, loadError, live }.
 // WHY:      five hand-rolled effects (Explorer x2, /data, /trends, HeroStats)
 //           with TWO stale-response guards (`dead` flags vs AbortController)
 //           and one with no guard at all — REPO_MAP §7.2. The bug class is a
@@ -32,6 +32,13 @@
 //           ageing rows against the last good date), so it keeps its own copy
 //           fed by onSuccess — the two call sites genuinely disagreed and this
 //           hook takes the stricter rule.
+//           `live` — the payload's own `live` flag: true = these rows came from
+//           Neon, false = the frozen CSV fallback answered THIS request, null =
+//           not settled yet (or the server said nothing). It is the cohort's
+//           provenance and it is NOT the same fact as the header pill's
+//           `meta.live`: /api/meta and /api/deals are separate requests, so one
+//           can fall back while the other answers live. A page that shows a
+//           cohort count has to say which dataset it counted.
 // CALLERS:  components/{Explorer (compact + full), HeroStats}, app/{data, trends}.
 // Verified by: shots/phase3-runtime-gate.json → cancelledRequests + notes —
 //   abort-on-supersede is asserted; the "failure clears latestSnapshotDate"
@@ -50,11 +57,20 @@ export interface UseDealsOptions {
 export function useDeals(
   query: string,
   options?: UseDealsOptions
-): { deals: Deal[]; latestSnapshotDate: string | null; loaded: boolean; loadError: boolean } {
+): {
+  deals: Deal[];
+  latestSnapshotDate: string | null;
+  loaded: boolean;
+  loadError: boolean;
+  live: boolean | null;
+} {
   const [deals, setDeals] = useState<Deal[]>([]);
   const [latestSnapshotDate, setLatestSnapshotDate] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [loadError, setLoadError] = useState(false);
+  // null until a response says otherwise: "live" is as much a claim as a row
+  // count, and before the first response there is nothing to claim.
+  const [live, setLive] = useState<boolean | null>(null);
 
   const enabled = options?.enabled ?? true;
   // Read through a ref so an inline call-site options object never becomes a
@@ -70,6 +86,7 @@ export function useDeals(
     // question and must not be shown as if it answered the new one.
     setLoaded(false);
     setLoadError(false);
+    setLive(null);
     const ac = new AbortController();
     fetch(`/api/deals?${query}`, { signal: ac.signal })
       .then((r) => r.json())
@@ -81,6 +98,7 @@ export function useDeals(
         const rows = j.deals ?? [];
         setDeals(rows);
         setLatestSnapshotDate(j.latest_snapshot_date ?? null);
+        setLive(typeof j.live === "boolean" ? j.live : null);
         setLoaded(true);
         optionsRef.current?.onSuccess?.(j);
       })
@@ -88,11 +106,12 @@ export function useDeals(
         if (ac.signal.aborted) return;
         setDeals([]);
         setLatestSnapshotDate(null); // a failed fetch is not a known date
+        setLive(null); // ...and not a known dataset either
         setLoadError(true);
         setLoaded(true);
       });
     return () => ac.abort();
   }, [enabled, query]);
 
-  return { deals, latestSnapshotDate, loaded, loadError };
+  return { deals, latestSnapshotDate, loaded, loadError, live };
 }

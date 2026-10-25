@@ -11,11 +11,15 @@ INPUTS:     See each submodule; this file only re-exports.
 OUTPUTS:    ``BASE_URL``, ``PROPERTY_TYPES``, ``SearchPage``, ``as_float``,
            ``as_int``, ``build_record``, ``extract_detail_property``,
            ``extract_json_ld``, ``extract_next_data``, ``ms_to_date``,
-           ``normalize_property_type``, ``parse_days_on_zillow_text``,
+           ``normalize_property_type``, ``page_payload_kind``,
+           ``parse_days_on_zillow_text``,
            ``parse_dollar_amount``, ``parse_price_history``,
            ``parse_price_cut_text``, ``parse_search_page``,
-           ``price_cut_flag_in_html`` — identical names to the old module.
-CALLERS:    ``src.scrape.phases`` (via this package), ``tests/test_scrape.py``.
+           ``price_cut_flag_in_html`` — identical names to the old module,
+           plus ``page_payload_kind`` (shared block detection, see
+           ``payload.py``).
+CALLERS:    ``src.scrape.phases`` (via this package), ``src.scrape.http``,
+            ``src.scrape.browser``, ``tests/test_scrape.py``.
 TESTED BY:  ``tests/test_scrape.py`` exercises every name above.
 """
 
@@ -29,6 +33,7 @@ from .extract import (
     extract_next_data,
     parse_search_page,
 )
+from .payload import page_payload_kind
 from .record import build_record
 from .text import (
     parse_dollar_amount,
@@ -49,6 +54,7 @@ __all__ = [
     "extract_next_data",
     "ms_to_date",
     "normalize_property_type",
+    "page_payload_kind",
     "parse_dollar_amount",
     "parse_days_on_zillow_text",
     "parse_price_cut_text",

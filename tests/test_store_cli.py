@@ -6,7 +6,7 @@ WHY:       These are the operator-facing errors of the load step; the exit
            codes and messages are the contract the runbook acts on.
 INPUTS:    monkeypatched env + tmp_path files + src.store.{cli,db}.
 OUTPUTS:   pytest verdicts only.
-CALLERS:   `python -m pytest` — suite baseline: 155 passed, 2 skipped.
+CALLERS:   `python -m pytest` — the current suite count lives in tests/README.md.
 """
 
 import pandas as pd
@@ -27,6 +27,29 @@ def test_missing_database_url_exits_2(monkeypatch, capsys):
     assert rc == 2
     assert "DATABASE_URL is not set" in captured.err
     assert "config/database.local.env" in captured.err
+
+
+def test_load_mode_without_in_is_a_config_error(monkeypatch, capsys):
+    """--in became optional (only --record-failure does not need it), so the
+    load mode must re-raise the same exit-2 usage error by hand."""
+    monkeypatch.setenv("DATABASE_URL", "postgresql://u:p@localhost/db")
+    assert cli.main([]) == 2
+    assert "--in is required" in capsys.readouterr().err
+
+
+def test_record_failure_mode_is_dispatched_before_any_input_check(
+    monkeypatch, capsys
+):
+    """No DATABASE_URL, no input dir: --record-failure must still reach the
+    recorder (which then reports its own config error) rather than the loader."""
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    seen = []
+    from src.store import record
+
+    monkeypatch.setattr(record, "main", lambda args: seen.append(args.run_id) or 0)
+    rc = cli.main(["--record-failure", "--run-id", "20261020-101500"])
+    assert rc == 0
+    assert seen == ["20261020-101500"]
 
 
 def test_missing_input_dir_exits_2(monkeypatch, tmp_path, capsys):

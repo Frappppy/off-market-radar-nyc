@@ -1,8 +1,14 @@
 # src/store/ — Stage 3: Postgres loader (`python -m src.store`)
 
-**What lives here.** `cli.py` runs **3 transactions** (apply schema + start run
-→ upsert listings/snapshots → finish run + mark stale) with exit codes
-`0/1/2`; `args.py` is its parser (split for the ≤200-line gate, re-imported);
+**What lives here.** `cli.py` runs **2 transactions** (apply schema + start run
+→ upsert listings/snapshots + finish run `success` + mark stale — the last three
+commit as one unit, so a failed run can never leave listings stamped as freshly
+seen) with exit codes
+`0/1/2`; `args.py` is its parser (split off for the file-size target in
+`docs/decisions.md` §7, re-imported);
+`record.py` is the `--record-failure` mode `scripts/run_daily.py` calls when an
+earlier stage died, so a run that never reached this stage still gets a
+`pipeline_runs` row (and `/api/health` still counts the failure);
 `statements.py` holds **all SQL text** as constants; `db.py` is the connection +
 upsert/stale/run bookkeeping (`STALE_RUNS = 3`); `mapping.py` + `scalars.py`
 turn cleaned DataFrame rows into null-safe tuples (`LISTING_COLUMNS` = 13,

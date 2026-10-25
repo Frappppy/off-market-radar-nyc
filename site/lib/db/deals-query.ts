@@ -4,20 +4,23 @@
 //           the other routes lives beside it in db/queries.ts.
 // INPUTS:   a DealQuery (scores, floors, zips, price band, type, limit,
 //           offset, optional windowDays).
-// OUTPUTS:  { text, params } — the statement /api/deals runs, byte-identical
-//           to the pre-split builder.
+// OUTPUTS:  { text, params } — the statement /api/deals runs. Same shape as
+//           the pre-split builder apart from two deliberate changes: score
+//           tokens reach SQL unfiltered (see the scores block), so the live
+//           path and the frozen-CSV fallback can never disagree, and the LIMIT
+//           clamp is lib/limits.ts's named rule instead of a local literal.
 // CALLERS:  app/api/deals/route.ts only.
 
-import { SCORES } from "@/lib/scores";
+import { clampLimit } from "@/lib/limits";
 
 export interface DealQuery {
-  scores: string[]; // e.g. ["High","Medium"]
+  scores: string[]; // the reader's tokens, e.g. ["High","Medium"]; unknown ones match nothing
   minDom: number | null;
   zips: string[];
   minPrice: number | null;
   maxPrice: number | null;
   type: string | null;
-  limit: number; // map: 500 max; table: 25/page via offset
+  limit: number; // clamped to [1, EXPORT_LIMIT] below; pages ask for 500, the CSV for EXPORT_LIMIT
   offset: number;
   // Recency guard. ABSENT is no longer the same as 0: /api/deals defaults to 1
   // (the newest snapshot plus the day before it) so listings carried over from
@@ -29,7 +32,8 @@ export interface DealQuery {
 
 // ---- the ONE dynamic SQL builder: DealQuery → parameterised SELECT ----
 // Builds a parameterized SELECT over vw_latest_listings (dashboard/views.sql).
-// All filters optional; scores validated against the CHECK constraint set.
+// All filters optional; every value is a bind parameter (no interpolated text —
+// the ONLY interpolated value is the clamped integer window below).
 //
 // The recency guard (roadmap 1.1) is ALWAYS the first WHERE condition and is
 // deliberately unparameterized: a clamped integer is interpolated instead, so
@@ -67,11 +71,18 @@ export function buildDealsQuery(q: DealQuery): { text: string; params: unknown[]
       : `snapshot_date >= ${newest} - ${windowDays}`
   );
   if (q.scores.length > 0) {
-    const allowed = q.scores.filter((s) => (SCORES as readonly string[]).includes(s));
-    if (allowed.length > 0) {
-      params.push(allowed);
-      conds.push(`motivation_score = ANY($${params.length}::text[])`);
-    }
+    // The tokens go through to Postgres EXACTLY as the reader sent them. They
+    // used to be filtered against SCORES here, which turned an unrecognised
+    // token (`?score=Bogus`, or a typo like `Hight`) into an empty list and
+    // silently DROPPED the score condition — the live path then returned the
+    // whole cohort (5,000 rows) while the frozen-CSV fallback, which applies
+    // the same tokens in memory, returned none. Two answers to one URL.
+    // `= ANY($n::text[])` matching nothing is the honest answer, and it is the
+    // same answer both paths give. Unknown tokens are simply never matched.
+    // Verified by: /api/deals live-vs-fallback parity — the SQL and
+    //   lib/filters.applyFilters now consume the identical token list.
+    params.push(q.scores);
+    conds.push(`motivation_score = ANY($${params.length}::text[])`);
   }
   if (q.minDom != null) {
     params.push(q.minDom);
@@ -94,7 +105,11 @@ export function buildDealsQuery(q: DealQuery): { text: string; params: unknown[]
     conds.push(`property_type = $${params.length}`);
   }
   const where = conds.length > 0 ? `WHERE ${conds.join(" AND ")}` : "";
-  params.push(Math.min(Math.max(q.limit, 1), 5000));
+  // The LIMIT bound goes through the same named clamp the route uses
+  // (lib/limits.ts), so the SQL cannot serve more rows than the export the UI
+  // quotes. `Math.min(Math.max(n,1),5000)` used to be written here as literals.
+  // Verified by: TS — clampLimit is total; no key feeds a limit of 0/NaN.
+  params.push(clampLimit(q.limit));
   const limitPh = `$${params.length}`;
   params.push(Math.max(q.offset, 0));
   const offsetPh = `$${params.length}`;

@@ -1,14 +1,16 @@
-"""WHAT:      .github/workflows/daily_pipeline.yml guards — the file exists at
-           the repo root, references exactly the six allowed GitHub secrets
-           (no leaked connection strings or values), keeps its cron and
-           workflow_dispatch triggers, and invokes scripts/run_daily.py with
-           the venv interpreter.
+"""WHAT:      .github/workflows/ guards — daily_pipeline.yml exists at the repo
+           root, references exactly the six allowed GitHub secrets (no leaked
+           connection strings or values), keeps its cron and workflow_dispatch
+           triggers, and invokes scripts/run_daily.py with the venv interpreter;
+           checks.yml (below) keeps its five gates and its credential-free run.
 WHY:       The workflow holds the only production credentials in the repo; a
            leak or a silently edited stage would go unnoticed until the next
            10:00 UTC run. Parsed as text — no Actions runner needed.
-INPUTS:    .github/workflows/daily_pipeline.yml (raw text only).
+INPUTS:    .github/workflows/{daily_pipeline,checks}.yml + requirements-dev.txt
+           (raw text only).
 OUTPUTS:   pytest verdicts only.
-CALLERS:   `python -m pytest` — suite baseline: 155 passed, 2 skipped.
+CALLERS:   `python -m pytest` — the suite count lives in tests/README.md, not
+           here: a number inside a test docstring is the first thing to go stale.
 """
 
 import importlib.util
@@ -116,6 +118,44 @@ def test_checks_workflow_references_no_secrets():
     assert "secrets." not in text
     assert "postgresql://" not in text.lower()
     assert "password=" not in text.lower()
+
+
+# ---------------------------------------------------------------------------
+# checks.yml static gates — ruff + mypy, added 2026-10-25 with
+# requirements-dev.txt. The assertion is on the COMMAND, not on a step name, so
+# renaming a step cannot silently turn a gate back into a comment.
+# Verified by: test_checks_workflow_runs_the_static_gates,
+#              test_requirements_dev_pins_the_two_tools.
+# ---------------------------------------------------------------------------
+REQ_DEV = ROOT / "requirements-dev.txt"
+
+
+def test_checks_workflow_runs_the_static_gates():
+    text = CHECKS_WORKFLOW.read_text(encoding="utf-8")
+    assert "-m pip install -r requirements-dev.txt" in text
+    assert re.search(r"run:.*-m ruff check src scripts tests dashboard", text)
+    assert re.search(r"run:.*-m mypy src", text)
+
+
+def test_requirements_dev_pins_the_two_tools():
+    # pinned, not floating: a ruff/mypy minor release must not be able to turn a
+    # green run red, and the file must stay installable on its own (-r runtime).
+    text = REQ_DEV.read_text(encoding="utf-8")
+    assert "-r requirements.txt" in text
+    assert re.search(r"^mypy==\d", text, re.M)
+    assert re.search(r"^ruff==\d", text, re.M)
+    assert not re.search(r"^(requests|httpx|SQLAlchemy|beautifulsoup4|lxml)==", text, re.M)
+
+
+def test_requirements_txt_has_no_unused_pins():
+    # the six packages this file used to pin were installed and never imported;
+    # a pin with no import behind it is an unpatched dependency, not a feature.
+    text = (ROOT / "requirements.txt").read_text(encoding="utf-8")
+    for gone in ("requests", "httpx", "SQLAlchemy", "beautifulsoup4", "lxml"):
+        assert not re.search(rf"^{gone}==", text, re.M), gone
+    # ...and the runtime roots it does need are still pinned
+    for kept in ("curl_cffi", "pandas", "playwright", "psycopg", "sqlglot", "pytest"):
+        assert re.search(rf"^{kept}==", text, re.M | re.I), kept
 
 
 # ---------------------------------------------------------------------------

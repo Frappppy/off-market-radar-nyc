@@ -1,11 +1,13 @@
 # ARCHITECTURE.md — Off-Market Radar NYC
 
-> **Describes:** the working tree as of **2026-10-21** = commit **`6be2c61`**
-> (HEAD of `main`, 2026-10-17) plus the *uncommitted* refactor work of Phases 0–3
-> and the Phase-5a `jobs/` cleanup ([REFACTOR_PLAN.md](REFACTOR_PLAN.md)).
-> Nothing has been committed; `git status` shows the whole reorganisation.
-> Verified **2026-10-25**: `pytest` **178 passed** ·
-> `dashboard/verify_contract.py` **54/54** · all four CLIs `--help` exit 0.
+> **Describes:** the working tree as of **2026-10-25** — commit **`f446e67`**
+> (HEAD of `main`, 2026-10-25) plus the *uncommitted* fix pass in `git status`.
+> The refactor itself is no longer uncommitted: it landed on 2026-10-22 as
+> `4668dfb` → `1c5c047`, with the guardrail CI in `4e716f1`
+> ([REFACTOR_PLAN.md](REFACTOR_PLAN.md)).
+> Verified **2026-10-25**: `pytest` **216 passed** · `ruff check src scripts
+> tests dashboard` + `mypy src` clean · `dashboard/verify_contract.py` **54/54**
+> · all four CLIs `--help` exit 0.
 >
 > Orientation order for a new human/agent: **this file → the directory README
 > (`README.md` in each dir) → the file's own T0 header**. Detail sources:
@@ -54,14 +56,17 @@ gitignored `config/*.local.env` and `site/.env.local`.
 |---|---|---|---|---|
 | 1 Scrape | `src/scrape/` (`parsing/` = extraction) | Zillow search + detail pages over DataImpulse proxy (robots-gated, ≥`MIN_DELAY` 2.0 s) | `jobs/<run_id>/raw/{listings.jsonl, pages_fetched.json, manifest.json, process_log.md}` — always written, even on failure | `python -m src.scrape --pages 5 --max-details 150 --out jobs/<run_id>/raw` |
 | 2 Clean | `src/clean/` | `raw/listings.jsonl` | `jobs/<run_id>/cleaned/listings_<date>.{parquet,csv}` + manifest + process log | `python -m src.clean --in jobs/<run_id>/raw --out jobs/<run_id>/cleaned` |
-| 3 Store | `src/store/` | cleaned dir (parquet preferred → CSV fallback) + `DATABASE_URL` | 3 transactions: apply schema + start run → upsert listings/snapshots → finish run + mark stale; evidence in `jobs/<run_id>/store/` | `python -m src.store --in jobs/<run_id>/cleaned` (exit `0/1/2`) |
+| 3 Store | `src/store/` | cleaned dir (parquet preferred → CSV fallback) + `DATABASE_URL` | 2 transactions: apply schema + start run → upsert listings/snapshots + finish run `success` + mark stale (ONE commit, so a failed run never leaves fresh `last_seen_at`); `--record-failure` writes a `failed` row for a run that never got here; evidence in `jobs/<run_id>/store/` | `python -m src.store --in jobs/<run_id>/cleaned` (exit `0/1/2`) |
 | — Shared | `src/common/` | — | run-id policy, `utc_now_iso`, manifest/log writers, coercion token sets | imported by all 3 stages |
 | 4 Site | `site/` (Next.js 15) | Postgres views via `site/lib/db/*`; frozen CSV on DB error | JSON/CSV APIs + 5 pages | `cd site && npm run build` / `npm run dev` |
 | 5 Dashboard | `dashboard/` | same views | Power BI (manual) | `python dashboard/verify_contract.py` (54 checks) |
 
 Orchestration: `scripts/run_daily.py` runs the three stages as subprocesses,
 streams output into `jobs/<run_id>/run_log.md`, skips later stages after a
-failure, loads `config/*.local.env` additively (real env wins).
+failure, loads `config/*.local.env` additively (real env wins). A skipped stage 3
+would otherwise leave no `pipeline_runs` row at all, so after any failure the
+orchestrator calls `python -m src.store --record-failure` best-effort — that is
+what makes `/api/health`'s failure count real rather than always zero.
 
 ## 3. The data contract (summary — source of truth is `docs/data_contract.md`)
 
@@ -105,7 +110,9 @@ failure, loads `config/*.local.env` additively (real env wins).
 # Interpreter — conda env, no activation needed (see docs/decisions.md):
 PY=~/.anaconda3/envs/off-market-radar/bin/python
 
-$PY -m pytest -q                       # 178 passed (2026-10-25)
+$PY -m pytest -q                       # 216 passed (2026-10-25)
+$PY -m ruff check src scripts tests dashboard   # 0 findings (pinned ruleset)
+$PY -m mypy src                        # Success: 43 source files
 $PY dashboard/verify_contract.py        # 54 / 54, exit 0
 $PY scripts/run_daily.py               # full pipeline (needs config/*.local.env)
 $PY -m src.scrape --pages 5 --max-details 150 --out jobs/<run_id>/raw

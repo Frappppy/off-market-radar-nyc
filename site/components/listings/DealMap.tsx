@@ -8,8 +8,10 @@
 //   whatever marker a click was landing on. Inline comments carry the measured
 //   reasons (control position, a11y wiring order).
 // INPUTS: `deals` (a new array triggers one redraw), `onPick`, `height`.
-// OUTPUTS: the map container div; marker DOM managed internally via refs.
-// CALLERS: components/explorer/{Full,Compact}Explorer.tsx.
+// OUTPUTS: the bare map container div (the bordered, height-reserving box is
+//   the lazy shell's job). Marker DOM is managed internally via refs.
+// CALLERS: components/listings/DealMapLazy.tsx — the ONLY importer, so
+//   maplibre stays out of the explorer pages' initial bundle.
 "use client";
 import { useEffect, useRef } from "react";
 import maplibregl from "maplibre-gl";
@@ -185,5 +187,11 @@ export default function DealMap({
     if (readyRef.current) renderRef.current?.();
   }, [deals]);
 
-  return <div ref={elRef} style={{ height, width: "100%", minHeight: 320 }} className="overflow-hidden rounded-xl border border-white/10" />;
+  // The visible box (border, radius, fixed height) belongs to
+  // components/listings/DealMapLazy.tsx — this div fills whatever it is given,
+  // so the lazy shell reserves the pixels and nothing shifts when the chunk
+  // arrives. maplibre needs a sized container, which `height` is (100% of that
+  // shell in practice).
+  // Verified by: NOTHING (gap) — no key measures the box before/after load.
+  return <div ref={elRef} style={{ height, width: "100%", minHeight: 320 }} />;
 }

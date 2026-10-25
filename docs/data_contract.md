@@ -128,6 +128,14 @@ CREATE TABLE pipeline_runs (
 - `listing_snapshots`: `ON CONFLICT (source, listing_id, snapshot_date) DO UPDATE`
   (a same-day re-run corrects rows, never duplicates).
 - Exactly one `pipeline_runs` row per run, updated to `success`/`failed`.
+- A run that dies BEFORE stage 3 (stage 1 or 2 failed, so this stage was
+  skipped) still gets its row: `scripts/run_daily.py` calls
+  `python -m src.store --record-failure --run-id <id> --note <stage + reason>`,
+  which writes `status='failed'` — but only for a row that does not exist yet
+  or is still `running`. A run stage 3 already finished keeps its own (more
+  precise) note, and a `success` row is never rewritten. Without this channel
+  failed runs were invisible: `/api/health` counted `runs_failed_30d = 0` while
+  most scheduled runs were failing.
 - After a successful load, listings that have missed `STALE_RUNS` (3) consecutive
   successful runs are marked `is_active = false` (`mark_stale_listings`, run
   inside the same transaction that flips `pipeline_runs` to `success`).

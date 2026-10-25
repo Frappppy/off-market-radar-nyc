@@ -118,10 +118,18 @@ def harvest_search(session, out_dir, state, records, zips=None, max_pages=20,
 
 
 def _merge_detail(record, prop, html, json_ld):
+    """Detail fields merged onto the search-card row, keyed by the card's id.
+
+    Refuses the merge when the detail page reports a different listing: the
+    id is the ledger key, and relabelling listing B's fields as listing A
+    would corrupt A without a trace (same rule as
+    ``phases._run_detail_phase``; verified by test_detail_of_other_listing_is_refused).
+    """
     merged = build_record(None, prop, html, json_ld, scraped_at=utc_now_iso())
     if merged is None:
         return None
-    merged["listing_id"] = record["listing_id"]
+    if merged["listing_id"] != record["listing_id"]:
+        return None
     for key in ("url", "city", "state", "zip", "price_previous",
                 "price_reduced", "days_on_market", "property_type"):
         if merged.get(key) in (None, False) and record.get(key) not in (None, False):
@@ -168,7 +176,8 @@ def harvest_details(session, out_dir, records, mode="motivated", limit=None,
             merged = _merge_detail(record, extract_detail_property(page.html),
                                    page.html, extract_json_ld(page.html))
             if merged is None:
-                log(f"    {index}/{len(targets)} {record['listing_id']} — no detail record")
+                log(f"    {index}/{len(targets)} {record['listing_id']} — "
+                    "no detail record (unparseable, or the page is another listing)")
                 continue
             records[record["listing_id"]] = merged
             enriched += 1

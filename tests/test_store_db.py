@@ -7,7 +7,7 @@ WHY:       Connection handling and credential redaction run on every load and
            the bridge between mapping.py and schema.sql.
 INPUTS:    monkeypatched env / tmp_path files + src.store.db (no live DB).
 OUTPUTS:   pytest verdicts only.
-CALLERS:   `python -m pytest` — suite baseline: 155 passed, 2 skipped.
+CALLERS:   `python -m pytest` — the current suite count lives in tests/README.md.
 """
 
 import pytest

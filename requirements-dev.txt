@@ -1,0 +1,20 @@
+# WHAT:    the pinned dev/CI toolchain — the two static gates that run beside
+#          the runtime environment.
+# WHY:     requirements.txt is the RUNTIME env (it is what the nightly job
+#          installs); a linter and a typechecker do not belong in it, but CI
+#          needs them pinned too or a minor release can turn a green run red.
+#          Added with the ruff+mypy gates in .github/workflows/checks.yml:
+#          `ruff check` (E4/E7/E9,F — ruff's default set) and `mypy src` both
+#          pass clean on this tree today, which is the point — a gate that is
+#          already red is not a gate. Widening (E501 is 218 findings away;
+#          scripts/ and dashboard/ are 12 mypy errors away) is the next step,
+#          deliberately not taken here.
+# INPUTS:  python -m pip install -r requirements-dev.txt
+# OUTPUTS: ruff 0.15.1 + mypy 1.20.2 and their own deps, on top of the runtime
+#          pins (the -r line below makes this file installable on its own).
+# CALLERS: .github/workflows/checks.yml.
+-r requirements.txt
+mypy==1.20.2
+mypy_extensions==1.1.0
+pathspec==1.0.4
+ruff==0.15.1

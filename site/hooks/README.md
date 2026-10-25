@@ -1,13 +1,17 @@
-# site/hooks/ — the three fetch hooks (one per endpoint)
+# site/hooks/ — the three fetch hooks (one per endpoint) + the range commit
 
 **What lives here.**
 
 - `useDeals.ts` — **the one** `/api/deals` request path (was 5 duplicated
   fetch effects with 2 different guard styles). Abort-based staleness: a
   response for a superseded query is dropped, not rendered.
-- `useMeta.ts` — **the one** `/api/meta` path (was 4 copies).
+- `useMeta.ts` — **the one** `/api/meta` path (was 4 copies). One module-level
+  promise, so the landing page's four consumers transfer it once.
 - `useListingHistory.ts` — **the one** `/api/listing/[id]` path (SideCard +
-  `/listing/[id]`).
+  `/listing/[id]`); it returns the listing's current row and its series from
+  that single request, so the detail page makes exactly one data call.
+- `useCommittedRange.ts` — not a fetch: defers a slider's value to the end of
+  the interaction so a drag commits one URL write instead of ~36 fetches.
 
 **The one trap.** Every consumer must respect the hooks' **`ready`/abort
 convention** — never render "0 listings" from a not-yet-loaded state (the

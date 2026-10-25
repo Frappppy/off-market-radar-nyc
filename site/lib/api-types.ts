@@ -73,12 +73,21 @@ export interface ListingHistoryPoint {
   scraped_at: string | null;
 }
 
-// GET /api/listing/[id]. `unavailable` is the honest "we could not read the
-// history view" state (view grant not applied yet, or Neon asleep): the panel
-// shows "history unavailable" instead of the site breaking. live=false covers
-// both that and the frozen-CSV path.
+// GET /api/listing/[id]. The response describes two independently-degrading
+// halves, each with its own flag. `unavailable` is the honest "we could not read
+// the history series" state (view grant not applied yet, or the database is
+// unreachable): the panel says so instead of the site breaking. `live` describes
+// the ROW only — false means the bundled sample answered it — so a live row over
+// an ungranted series is not mislabelled as frozen data.
+// `deal` is the listing's current row (address, ZIP, price, score, URL) — the
+// detail the page renders above the series. It is null when the id is not in
+// the dataset at all, which is a RESULT, not a failure, and so travels with
+// live:true. `dataset_latest_snapshot_date` is the reference the page ages
+// "last seen N days ago" against (the dataset's newest snapshot, not this
+// listing's own).
 // Verified by: /api/listing/[id] unavailable invariant — the route sets the
-//   flag exactly when the view is unreadable; TS keeps it optional.
+//   flag exactly when the series is unreadable; TS keeps both new fields optional
+//   so an older response body still parses.
 export interface ListingHistoryResponse {
   listing_id: string;
   source: string;
@@ -86,6 +95,8 @@ export interface ListingHistoryResponse {
   latest_snapshot_date: string | null;
   live: boolean;
   unavailable?: boolean;
+  deal?: Deal | null;
+  dataset_latest_snapshot_date?: string | null;
 }
 
 // GET /api/health — ingestion health card (roadmap 1.4).

@@ -1,16 +1,22 @@
 """WHAT:      CLI for stage 3 (store): ``python -m src.store`` — fail-fast
-           config check, cleaned-dir read, three committed transactions
-           (schema+marker / map+upsert / success+stale-mark), evidence files.
+           config check, cleaned-dir read, two committed transactions
+           (schema+running-marker / upserts+success-marker+stale-mark),
+           evidence files; plus the ``--record-failure`` dispatch to
+           ``src.store.record``.
 WHY:        The run must leave an auditable trail (manifest + process log)
-           and a ``pipeline_runs`` row for every attempt, success or not.
-INPUTS:     argv (``--in``, ``--out``, ``--run-id``, ``--skip-schema``);
-           the cleaned directory on disk; ``DATABASE_URL``.
+           and a ``pipeline_runs`` row for every attempt, success or not — and
+           the freshness stamps and the success marker commit together, so a
+           failed run can never leave listings looking freshly seen.
+INPUTS:     argv (``--in``, ``--out``, ``--run-id``, ``--skip-schema``,
+           ``--record-failure``); the cleaned directory on disk; ``DATABASE_URL``.
 OUTPUTS:    ``store/manifest.json`` + ``process_log.md``; Postgres writes;
             exit codes 0 success · 1 runtime failure (pipeline_runs=failed)
             · 2 config/input failure (nothing written to the DB).
-CALLERS:    ``python -m src.store`` (``__main__`` -> ``main``).
+CALLERS:    ``python -m src.store`` (``__main__`` -> ``main``);
+           ``scripts/run_daily.py`` (load mode and failure-recording mode).
 TESTED BY:  ``tests/test_store_cli.py`` (exit-code/config paths),
-           ``tests/test_store_flow.py`` (success + failure DB flows).
+           ``tests/test_store_flow.py`` (success + failure DB flows, transaction
+           boundaries, ``--record-failure`` dispatch).
 """
 
 from __future__ import annotations
@@ -23,7 +29,7 @@ import psycopg
 
 from ..common import runid
 from ..common.evidence import append_log, iso, utc_now, write_manifest
-from . import StoreError
+from . import StoreError, record
 from .args import parse_args
 from .db import (
     STALE_RUNS,
@@ -100,6 +106,19 @@ def _write_evidence(
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
 
+    # 0. failure-recording mode: the orchestrator's reverse channel for a run
+    # that died before this stage ever started (Verified by:
+    # test_record_failure_mode_writes_only_the_run_row).
+    if args.record_failure:
+        return record.main(args)
+
+    if not args.input_dir:
+        print(
+            "src.store: ERROR: --in is required (or use --record-failure)",
+            file=sys.stderr,
+        )
+        return EXIT_CONFIG
+
     # 1. fail fast on missing DATABASE_URL (Verified by: test_missing_database_url_exits_2)
     try:
         get_database_url()
@@ -151,15 +170,26 @@ def main(argv: list[str] | None = None) -> int:
             if not args.skip_schema:
                 apply_schema(conn)
             start_pipeline_run(conn, run_id, source_field)
-        with conn.transaction():  # transaction 2: map + upsert (all-or-nothing; Verified by: test_failure_flow_marks_failed)
-            listing_rows = [listing_tuple(row) for row in df.to_dict("records")]
-            snapshot_rows = [snapshot_tuple(row) for row in df.to_dict("records")]
+        # Row mapping is pure CPU, so it happens OUTSIDE the write transaction.
+        listing_rows = [listing_tuple(row) for row in df.to_dict("records")]  # type: ignore[arg-type]
+        snapshot_rows = [snapshot_tuple(row) for row in df.to_dict("records")]  # type: ignore[arg-type]
+        # Transaction 2 — data, success marker and stale-marking in ONE commit.
+        # They must not be separable: `last_seen_at = now()` / `is_active = true`
+        # are the store's claim that a listing was seen BY A SUCCESSFUL RUN, and
+        # `_MARK_STALE` counts successful runs. Split across commits, a run that
+        # died in the second one left every listing freshly stamped while
+        # pipeline_runs said `failed` — the data and the ledger disagreed, and
+        # the next stale-mark window counted a run that never finished.
+        # (Verified by: test_success_marker_and_data_share_one_transaction,
+        # test_failure_flow_marks_failed)
+        with conn.transaction():
             upsert_listings(conn, listing_rows)
             upsert_snapshots(conn, snapshot_rows)
-            records_loaded = len(snapshot_rows)
-        with conn.transaction():  # transaction 3: mark success
-            finish_pipeline_run(conn, run_id, "success", records_scraped, records_loaded, None)
+            finish_pipeline_run(
+                conn, run_id, "success", records_scraped, len(snapshot_rows), None
+            )
             inactive_marked = mark_stale_listings(conn)
+        records_loaded = len(snapshot_rows)  # only once the commit really happened
         status = "success"
         exit_code = EXIT_OK
         append_log(

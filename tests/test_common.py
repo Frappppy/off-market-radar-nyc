@@ -7,7 +7,7 @@ WHY:       Phase 1 deduplicated two differing implementations into these
            point at (the modules had no direct coverage before).
 INPUTS:    tmp_path only — no clock, no network, no repo files.
 OUTPUTS:   pytest verdicts only.
-CALLERS:   `python -m pytest` — suite baseline: 155 passed, 2 skipped.
+CALLERS:   `python -m pytest` — the current suite count lives in tests/README.md.
 """
 
 import pytest

@@ -8,7 +8,7 @@ WHY:       Marking a live listing inactive hides it from the site; the SQL has
            Pure unit tests — FakeCursor/FakeConn stand in for psycopg.
 INPUTS:    src.store.db statement constants + fakes (no live DB).
 OUTPUTS:   pytest verdicts only.
-CALLERS:   `python -m pytest` — suite baseline: 155 passed, 2 skipped.
+CALLERS:   `python -m pytest` — the current suite count lives in tests/README.md.
 """
 
 from src.store import db

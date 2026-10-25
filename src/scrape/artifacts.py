@@ -1,9 +1,9 @@
 """WHAT:      Stage-1 artifact writers — ``listings.jsonl``,
-           ``pages_fetched.json``, ``manifest.json``, ``process_log.md``, and
-           the ``_finalize`` step that writes all four for either outcome.
+            ``pages_fetched.json``, ``manifest.json``, ``process_log.md``, and
+            the ``_finalize`` step that writes all four for either outcome.
 WHY:        Split (phase 2) from the 481-line ``pipeline.py``; run state and
-           guards live in ``run.py``, the phases in ``phases.py`` (this module
-           is a mixin class — bodies moved verbatim).
+            guards live in ``run.py``, the phases in ``phases.py`` (this module
+            is a mixin class — bodies moved verbatim).
 INPUTS:     ``ScrapeRun`` state via ``self`` (records, counters, status, times);
             ``resolve_run_id`` takes the raw output-dir path.
 OUTPUTS:    The four contract files under ``self.out_dir``; the run id derived
@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 from ..common import runid
 from ..common.timeutil import utc_now_iso
@@ -43,6 +44,28 @@ def resolve_run_id(out_dir: Path) -> str:
 
 class ArtifactsMixin:
     """Artifact writers; expects the ``ScrapeRun`` state contract."""
+
+    if TYPE_CHECKING:
+        out_dir: Path
+        records: dict[str, dict]
+        unusable_cards: int
+        run_id: str
+        started_at: str
+        finished_at: str | None
+        status: str
+        reason: str | None
+        pages: int
+        max_details: int
+        delay: float
+        start_url: str
+        search_pages: list[Any]
+        detail_attempted: int
+        detail_ok: int
+        detail_skipped: list[str]
+        notes: list[str]
+        _session: str | None
+
+        def _audit(self) -> list[dict]: ...
 
     def _write_jsonl(self) -> Path:
         path = self.out_dir / "listings.jsonl"

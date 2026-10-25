@@ -1,17 +1,22 @@
 #!/usr/bin/env python3
 """WHAT:      Daily pipeline orchestrator — Stage 1 scrape -> Stage 2 clean ->
            Stage 3 store for one UTC run_id; data + run_log.md land in
-           jobs/<run_id>/.
+           jobs/<run_id>/. A failed stage also gets a `failed` pipeline_runs
+           row (`src.common.ingestion` -> `python -m src.store --record-failure`).
 WHY:       The single entry point CI and humans use for a daily run: every
            stage runs as a subprocess of THIS interpreter (sys.executable), a
            failing stage skips the remaining stages, and the script exits
-           non-zero. Usage: scripts/run_daily.py [--skip-scrape] [--pages 30]
+           non-zero. Skipping stage 3 used to skip its bookkeeping too, so
+           failed runs left no database row and /api/health reported zero
+           failures. Usage: scripts/run_daily.py [--skip-scrape] [--pages 30]
            [--max-details 120] [--delay 5].
 INPUTS:    CLI flags; gitignored config/*.local.env files are loaded first and
            never override variables already set (CI secrets win).
-OUTPUTS:   jobs/<run_id>/{raw,cleaned,store} + run_log.md; exit 0 = all stages ok.
+OUTPUTS:   jobs/<run_id>/{raw,cleaned,store} + run_log.md; one failed
+           pipeline_runs row per failed run (best effort); exit 0 = all stages ok.
 CALLERS:   .github/workflows/daily_pipeline.yml; run by hand (README).
-TESTED BY: tests/test_run_daily.py — stage commands, skip logic, env policy.
+TESTED BY: tests/test_run_daily.py — stage commands, skip logic, env policy and
+           the failure-recording hook.
 """
 
 from __future__ import annotations
@@ -23,8 +28,12 @@ import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Callable
 
 ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:  # scripts/ is not a package — same trick as
+    sys.path.insert(0, str(ROOT))  # scripts/tier1_migration_check.py
+from src.common.ingestion import RunFailure, record_ingestion_failure  # noqa: E402
 
 #: Daily-run volume policy — a defensible portfolio-scale sample, NOT bulk.
 #: The request budget is deliberately about the SAME as the original
@@ -93,15 +102,14 @@ class Stage:
     # test_run_pipeline_intentional_skip_is_not_failure.
 
 
+# Ingestion-failure recording lives in src/common/ingestion.py (line budget:
+# docs/decisions.md §7); main() below wires it as the `on_failure` hook.
+
+
 def build_stages(
-    run_id: str,
-    *,
-    skip_scrape: bool = False,
-    raw_dir: Path | None = None,
-    pages: int = DAILY_PAGES,
-    max_details: int = DAILY_MAX_DETAILS,
-    delay: float = DAILY_DELAY,
-    root: Path = ROOT,
+    run_id: str, *, skip_scrape: bool = False, raw_dir: Path | None = None,
+    pages: int = DAILY_PAGES, max_details: int = DAILY_MAX_DETAILS,
+    delay: float = DAILY_DELAY, root: Path = ROOT,
 ) -> list[Stage]:
     cleaned_in = f"jobs/{run_id}/cleaned"
     if skip_scrape:
@@ -134,13 +142,23 @@ def build_stages(
     ]
 
 
-def run_pipeline(stages: list[Stage], run_id: str, root: Path = ROOT) -> int:
+def run_pipeline(
+    stages: list[Stage], run_id: str, root: Path = ROOT, *,
+    on_failure: Callable[[RunFailure], str] | None = None,
+) -> int:
+    """Run the stages in order; the first failure skips the rest.
+
+    ``on_failure`` is the pipeline_runs visibility hook (production passes
+    ``record_ingestion_failure``); leaving it None keeps this a pure stage
+    runner that touches no database.
+    """
     jobs_dir = root / "jobs" / run_id
     jobs_dir.mkdir(parents=True, exist_ok=True)
     log_path = jobs_dir / "run_log.md"
     started = datetime.now(timezone.utc)
     results: dict[str, str] = {}
     first_failure: str | None = None
+    failure: RunFailure | None = None
 
     with log_path.open("w", encoding="utf-8") as log:
         def emit(text: str = "") -> None:
@@ -187,9 +205,12 @@ def run_pipeline(stages: list[Stage], run_id: str, root: Path = ROOT) -> int:
                 bufsize=1,
             )
             assert proc.stdout is not None
+            last_line = ""
             for line in proc.stdout:
                 log.write(line)
                 sys.stdout.write(line)
+                if line.strip():
+                    last_line = line.rstrip()
             exit_code = proc.wait()
             emit("```")
             stage_finished = datetime.now(timezone.utc)
@@ -201,6 +222,7 @@ def run_pipeline(stages: list[Stage], run_id: str, root: Path = ROOT) -> int:
             else:
                 results[stage.name] = f"failed (exit {exit_code})"
                 first_failure = stage.name
+                failure = RunFailure(run_id, stage.name, exit_code, last_line or None)
 
         emit("## Summary")
         emit()
@@ -213,6 +235,14 @@ def run_pipeline(stages: list[Stage], run_id: str, root: Path = ROOT) -> int:
         overall = "success" if first_failure is None else f"failed (`{first_failure}`)"
         emit(f"- finished_at: {finished.isoformat(timespec='seconds')}")
         emit(f"- overall: {overall}")
+        # A skipped stage 3 would otherwise leave this run out of pipeline_runs
+        # entirely, so the failure is only half-reported until the row exists.
+        # Verified by: test_run_pipeline_calls_the_failure_recorder_once
+        if failure is not None and on_failure is not None:
+            try:
+                emit(on_failure(failure))
+            except Exception as exc:  # noqa: BLE001 - one failure, not two
+                emit(f"- pipeline_runs: failure NOT recorded ({type(exc).__name__}: {exc})")
         emit(f"- log: `jobs/{run_id}/run_log.md`")
 
     return 0 if first_failure is None else 1
@@ -260,7 +290,7 @@ def main(argv: list[str] | None = None) -> int:
     if loaded:
         print(f"run_daily: loaded env files: {', '.join(p.name for p in loaded)}")
     print(f"run_daily: run_id={run_id}")
-    return run_pipeline(stages, run_id, ROOT)
+    return run_pipeline(stages, run_id, ROOT, on_failure=record_ingestion_failure)
 
 
 if __name__ == "__main__":

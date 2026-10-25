@@ -184,7 +184,8 @@ def main(argv: list[str]) -> int:
             f"{HEADER_LINES} lines): {p}"
         )
     phantoms = find_phantom_anchors(files)
-    for line in phantoms: print(line)
+    for line in phantoms:
+        print(line)
     if violations:
         print(f"{len(violations)} file(s) missing a T0 header.")
         return 1

@@ -10,8 +10,6 @@ CALLERS:   `python -m pytest`.
 
 import json
 
-import pytest
-
 from src.scrape.browser import FetchPage, page_payload_kind
 from src.scrape.harvest import _merge_detail, harvest_search
 from src.scrape.harvest_state import (
@@ -209,3 +207,18 @@ def test_merge_detail_keeps_search_signals():
     assert merged["price_reduced"] is True
     # detail embedded JSON wins over the search card when both have the field
     assert merged["days_on_market"] == 112
+
+
+def test_detail_of_other_listing_is_refused():
+    """A detail page carrying a different zpid than the card is *another*
+    listing (relisted homes keep the URL). Relabelling it with the card's id
+    would overwrite the first row's price and DOM with a stranger's, silently —
+    so the merge is refused instead."""
+    old = {"listing_id": "123456", "url": "https://www.zillow.com/homedetails/x/123456_zpid/",
+           "price_previous": 500000, "price_reduced": True, "days_on_market": 120,
+           "city": "Brooklyn", "state": "NY", "zip": "11201",
+           "property_type": "house", "price_current": 475000}
+    other = dict(DETAIL_PROPERTY, zpid=999999)
+    assert _merge_detail(old, other, detail_html(prop=other), None) is None
+    # the untouched row is still the search-card record
+    assert old["listing_id"] == "123456"

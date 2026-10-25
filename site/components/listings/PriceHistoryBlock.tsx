@@ -51,7 +51,8 @@ export default function PriceHistoryBlock({
 
       {hist.status === "ready" && hist.unavailable && (
         <p className="mt-1 text-[11px] text-zinc-500">
-          price history unavailable — the history view is not granted yet
+          price history unavailable — the daily-series view could not be read
+          (not granted yet, or the database is unreachable)
         </p>
       )}
 

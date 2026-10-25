@@ -5,7 +5,7 @@
 //           Phase 3). Rendering and gating unchanged; see CompactExplorer's
 //           header for the `enabled: ready` gate rationale.
 // INPUTS:   none directly — filters come from the URL store via useFilters.
-// OUTPUTS:  /api/deals (limit=500) + /api/meta fetches.
+// OUTPUTS:  /api/deals (limit=PAGE_LIMIT_DEFAULT) + /api/meta fetches.
 // CALLERS:  components/explorer/Explorer.tsx (full mode), rendered by
 //           app/map/page.tsx.
 
@@ -13,10 +13,12 @@ import { useMemo, useState } from "react";
 import { useDeals } from "@/hooks/useDeals";
 import { useMeta } from "@/hooks/useMeta";
 import { useUrlSearchReady } from "@/lib/useUrlSearch";
-import DealMap from "@/components/listings/DealMap";
+import CohortSource from "@/components/status/CohortSource";
+import DealMapLazy from "@/components/listings/DealMapLazy";
 import Filters from "@/components/filters/Filters";
 import SideCard from "@/components/listings/SideCard";
 import { useFilters, toDealsQuery } from "@/lib/useFilters";
+import { PAGE_LIMIT_DEFAULT } from "@/lib/limits";
 import type { Deal } from "@/lib/api-types";
 import { SCORES, SCORE_COLORS } from "@/lib/scores";
 
@@ -33,9 +35,16 @@ export default function FullExplorer() {
   //   (abort-on-supersede; the wasted-default-fetch claim itself is a gap).
   const ready = useUrlSearchReady();
 
-  const query = useMemo(() => toDealsQuery(filters, { limit: "500" }), [filters]);
+  const query = useMemo(
+    () => toDealsQuery(filters, { limit: String(PAGE_LIMIT_DEFAULT) }),
+    [filters]
+  );
 
-  const { deals } = useDeals(query, {
+  // `live` is the cohort's own provenance, read off the same response that
+  // produced the pin count below — /api/meta (the header pill) is a separate
+  // request and can be live while this one fell back to the bundled sample.
+  // Verified by: NOTHING (gap) — no key forces live:false to read the pill.
+  const { deals, live } = useDeals(query, {
     enabled: ready,
     onSuccess: (r) => setLatestSnapshot(r.latest_snapshot_date ?? null),
   });
@@ -51,6 +60,10 @@ export default function FullExplorer() {
         </div>
         <p className="ml-auto text-sm text-zinc-400">
           <span className="font-semibold text-zinc-100">{deals.length}</span> of {total ?? "…"} shown
+          {/* Inline, so the only layout effect is inside a line that already
+              re-wraps; it appears solely in the frozen case.
+              Verified by: NOTHING (gap) — no key measures this line. */}
+          <span className="ml-1 align-baseline"><CohortSource live={live} suffix="these pins" /></span>
           {/* S4: this hint was zinc-600 (#52525c) on #09090b = 2.58:1.
               Verified by: NOTHING (gap) — no key measures this hint's
               contrast; the 2.58:1 figure is QA-sweep evidence. */}
@@ -66,7 +79,7 @@ export default function FullExplorer() {
           <Filters value={filters} onChange={setFilters} onReset={resetFilters} shown={deals.length} total={total} />
         </div>
         <div className="relative">
-          <DealMap deals={deals} onPick={setPicked} height="calc(100svh - 210px)" />
+          <DealMapLazy deals={deals} onPick={setPicked} height="calc(100svh - 210px)" />
           <div className="panel absolute bottom-3 left-3 flex items-center gap-2 px-2.5 py-1.5 text-[11px] text-zinc-300">
             {SCORES.map((s) => (
               <span key={s} className="flex items-center gap-1">

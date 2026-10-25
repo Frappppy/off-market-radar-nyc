@@ -11,6 +11,7 @@ CALLERS:    ``python -m src.store`` (``src.store.__main__`` -> ``cli.main``).
 TESTED BY:  ``tests/test_store_flow.py`` (success + failure CLI flows).
 Contract: docs/data_contract.md § "Stage 3 — SQL".
 CLI: python -m src.store --in jobs/<run_id>/cleaned   (requires DATABASE_URL)
+     python -m src.store --record-failure --run-id <id> --note "why it died"
 """
 
 __all__ = ["StoreError"]

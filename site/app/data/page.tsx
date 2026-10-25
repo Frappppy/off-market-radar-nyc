@@ -8,7 +8,7 @@
 //           ./deals-table.tsx. Row-click-to-panel and the URL-permalinked view
 //           state are behaviour we KEEP, unchanged.
 // INPUTS:   useFilters (URL filter state), useUrlSearch (view params),
-//           useDeals (filtered rows + loaded/loadError tri-state + the
+//           useDeals (filtered rows + loaded/loadError/live tri-state + the
 //           payload's latestSnapshotDate).
 // OUTPUTS:  the rendered /data page.
 // CALLERS:  the Next.js router (app/data/page.tsx route).
@@ -20,6 +20,7 @@ import SideCard from "@/components/listings/SideCard";
 import { useDeals } from "@/hooks/useDeals";
 import { useFilters, toDealsQuery } from "@/lib/useFilters";
 import { setUrlSearch, useUrlSearch, useUrlSearchReady } from "@/lib/useUrlSearch";
+import { PAGE_LIMIT_DEFAULT } from "@/lib/limits";
 import type { Deal } from "@/lib/api-types";
 import type { FilterState } from "@/lib/filters";
 import { DEFAULT_SORT, isSortKey, sortRows, type SortKey } from "./columns";
@@ -62,7 +63,10 @@ function DataInner() {
   const sortDir = parseDir(sp.get("dir"));
   const requestedPage = parsePage(sp.get("page"));
 
-  const query = useMemo(() => toDealsQuery(filters, { limit: "500" }), [filters]);
+  const query = useMemo(
+    () => toDealsQuery(filters, { limit: String(PAGE_LIMIT_DEFAULT) }),
+    [filters]
+  );
 
   const writeView = useCallback(
     (patch: ViewPatch) => {
@@ -86,7 +90,7 @@ function DataInner() {
   // success side effect stays here (a new cohort closes the open row panel,
   // on SUCCESS only — a failed fetch never closed it). Verified by: NOTHING
   // (gap) — no check exercises the failed-fetch panel rule.
-  const { deals, latestSnapshotDate, loaded, loadError } = useDeals(query, {
+  const { deals, latestSnapshotDate, loaded, loadError, live } = useDeals(query, {
     enabled: ready,
     onSuccess: () => setPicked(null),
   });
@@ -129,7 +133,13 @@ function DataInner() {
   // ---- Layout: filters | table | (side panel when picked) ----
   return (
     <div className="space-y-4">
-      <ExportHeader rowCount={sorted.length} query={query} loaded={loaded} loadError={loadError} />
+      <ExportHeader
+        rowCount={sorted.length}
+        query={query}
+        loaded={loaded}
+        loadError={loadError}
+        live={live}
+      />
 
       {/* Run receipt for the export: where the numbers above came from. */}
       <IngestionHealth />

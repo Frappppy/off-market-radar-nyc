@@ -16,6 +16,7 @@ TESTED BY:  ``tests/test_scrape.py::test_detail_targets_price_cuts_first``
 from __future__ import annotations
 
 from collections import deque
+from typing import TYPE_CHECKING, Any
 
 from ..common.timeutil import utc_now_iso
 from .config import DEFAULT_PAGE_URLS
@@ -53,6 +54,20 @@ class SearchFetch:
 
 class PhasesMixin:
     """Search + detail phases; expects the ``ScrapeRun`` state contract."""
+
+    if TYPE_CHECKING:
+        records: dict[str, dict]
+        search_rows: dict[str, dict]
+        unusable_cards: int
+        search_pages: list[Any]
+        notes: list[str]
+        start_url: str
+        pages: int
+        max_details: int
+        detail_attempted: int
+        detail_ok: int
+        detail_skipped: list[str]
+        _fetch: Any
 
     # --- search phase --------------------------------------------------------
 
@@ -194,6 +209,17 @@ class PhasesMixin:
                 self.detail_skipped.append(zpid)
                 self.notes.append(
                     f"detail zpid {zpid}: unparseable detail record (kept search-card fields)"
+                )
+                continue
+            if merged["listing_id"] != zpid:
+                # A detail page may redirect to a different listing (relisted
+                # homes keep the URL, get a new zpid). Storing B's fields under
+                # A's key would corrupt A silently, so keep the search-card
+                # record and record the mismatch instead.
+                self.detail_skipped.append(zpid)
+                self.notes.append(
+                    f"detail zpid {zpid} returned {merged['listing_id']} "
+                    "(kept search-card fields)"
                 )
                 continue
             self.records[zpid] = merged

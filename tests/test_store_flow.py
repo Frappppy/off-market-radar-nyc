@@ -7,8 +7,9 @@ WHY:       The CLI is where all-or-nothing semantics and evidence writing are
            freshness data the site trusts. Every collaborator is monkeypatched,
            so the tests are deterministic, offline and fast.
 INPUTS:    tmp_path parquet fixtures + src.store.{cli,db} with fakes.
-OUTPUTS:   pytest verdicts only; store/ artifacts inside tmp_path.
-CALLERS:   `python -m pytest` — suite baseline: 155 passed, 2 skipped.
+OUTPUTS:   pytest verdicts only; store/ artifacts inside tmp_path. The
+           `--record-failure` mode is pinned in tests/test_store_record_failure.py.
+CALLERS:   `python -m pytest` — the current suite count lives in tests/README.md.
 """
 
 import json
@@ -23,6 +24,10 @@ class FakeConn:
     def __init__(self):
         self.rolled_back = 0
         self.closed = False
+        # transaction() scopes are numbered so a test can ask "which
+        # transaction did this write happen in?"
+        self.txn_seq = 0
+        self.txn_open = None
 
     def __enter__(self):
         return self
@@ -32,17 +37,22 @@ class FakeConn:
 
     def rollback(self):
         self.rolled_back += 1
+        self.txn_open = None
 
     def transaction(self):
         """Mimic psycopg3 Connection.transaction(): commit/rollback scope
         that does NOT close the connection (unlike __exit__ in 3.3.6)."""
         conn = self
+        conn.txn_seq += 1
+        scope = conn.txn_seq
 
         class _Txn:
             def __enter__(self):
+                conn.txn_open = scope
                 return conn
 
             def __exit__(self, *exc):
+                conn.txn_open = None
                 return False
 
         return _Txn()
@@ -61,20 +71,37 @@ def instrument(monkeypatch, tmp_path):
     monkeypatch.setattr(cli, "connect", lambda dsn: conn)
     monkeypatch.setattr(cli, "apply_schema", lambda c: None)
     monkeypatch.setattr(
-        cli, "start_pipeline_run", lambda c, rid, src: calls["started"].append((rid, src))
+        cli,
+        "start_pipeline_run",
+        lambda c, rid, src: (
+            calls["started"].append((rid, src)),
+            calls.setdefault("txn", []).append(("start", c.txn_open)),
+        )[0],
     )
     monkeypatch.setattr(
         cli,
         "finish_pipeline_run",
-        lambda c, rid, status, scraped, loaded, notes: calls["finished"].append(
-            (rid, status, scraped, loaded, notes)
-        ),
+        lambda c, rid, status, scraped, loaded, notes: (
+            calls["finished"].append((rid, status, scraped, loaded, notes)),
+            calls.setdefault("txn", []).append(("finish", c.txn_open)),
+        )[0],
     )
-    monkeypatch.setattr(cli, "upsert_listings", lambda c, rows: len(rows))
-    monkeypatch.setattr(cli, "upsert_snapshots", lambda c, rows: len(rows))
+    monkeypatch.setattr(
+        cli,
+        "upsert_listings",
+        lambda c, rows: calls.setdefault("txn", []).append(("listings", c.txn_open))
+        or len(rows),
+    )
+    monkeypatch.setattr(
+        cli,
+        "upsert_snapshots",
+        lambda c, rows: calls.setdefault("txn", []).append(("snapshots", c.txn_open))
+        or len(rows),
+    )
 
     def _fake_mark_stale(c):
         calls["stale"].append(c)
+        calls.setdefault("txn", []).append(("stale", c.txn_open))
         return 4  # deterministic count for the process_log evidence line
 
     monkeypatch.setattr(cli, "mark_stale_listings", _fake_mark_stale)
@@ -181,6 +208,42 @@ def test_records_scraped_from_raw_manifest(instrument, tmp_path):
     assert calls["finished"][0][2] == 42  # records_scraped
 
 
+def test_success_marker_and_data_share_one_transaction(instrument, tmp_path):
+    """Freshness stamps and the success marker must be inseparable.
+
+    `_INSERT_LISTING` sets `last_seen_at = now()` / `is_active = true` and
+    `_MARK_STALE` counts only `status = 'success'` runs, so upserts, the success
+    marker and the stale-mark commit as ONE unit: a run that dies halfway rolls
+    back completely and leaves no listing stamped by a run that never finished.
+    """
+    _, conn = instrument
+    cleaned = _write_cleaned(tmp_path)
+    assert cli.main(["--in", str(cleaned), "--out", str(cleaned.parent / "store")]) == 0
+    txn = {name: scope for name, scope in instrument[0]["txn"]}
+    assert txn["start"] == 1  # schema + running marker: its own committed txn
+    assert txn["listings"] == txn["snapshots"] == txn["finish"] == txn["stale"] == 2
+    # ...and the failure marker is written in a THIRD, later transaction, after
+    # the rollback, so it survives the transaction that failed.
+    assert conn.txn_seq == 2
+
+
+def test_failure_marker_is_written_after_rollback(instrument, tmp_path, monkeypatch):
+    _, conn = instrument
+    cleaned = _write_cleaned(tmp_path)
+
+    def boom(c, rows):
+        raise RuntimeError("connection lost")
+
+    monkeypatch.setattr(cli, "mark_stale_listings", boom)
+    assert cli.main(["--in", str(cleaned), "--out", str(cleaned.parent / "store")]) == 1
+    txn = instrument[0]["txn"]
+    assert ("finish", 2) in txn  # the doomed success attempt, in the data txn
+    assert conn.rolled_back == 1
+    assert ("finish", 3) in txn  # ...and the `failed` marker, in a txn of its own
+    # records_loaded is only counted on a real commit: nothing landed today
+    assert instrument[0]["finished"][-1][:4] == ("20261014-143000", "failed", None, 0)
+
+
 def test_skip_schema_flag(instrument, tmp_path, monkeypatch):
     calls, _ = instrument
     applied = []
@@ -192,3 +255,4 @@ def test_skip_schema_flag(instrument, tmp_path, monkeypatch):
     rc = cli.main(["--in", str(cleaned), "--out", str(cleaned.parent / "store")])
     assert rc == 0
     assert applied == [1]  # applied by default
+

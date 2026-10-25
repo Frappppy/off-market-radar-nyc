@@ -26,7 +26,6 @@ Hard rules (docs/data_contract.md, docs/robots_precheck.md), each anchored:
 from __future__ import annotations
 
 from pathlib import Path
-from urllib.parse import urlparse
 
 from .artifacts import ArtifactsMixin, resolve_run_id
 from .config import (
@@ -37,16 +36,13 @@ from .config import (
     DEFAULT_TIMEOUT,
     START_URL,
 )
-from .http import CaptchaBlocked, RateLimited, ZillowClient, utc_now_iso
+from .http import CaptchaBlocked, FetchResult, RateLimited, ZillowClient, utc_now_iso
 from .phases import PhasesMixin, RunError, SearchFetch
 from .proxy import build_proxy_url, scrub_secrets
-from .robots import DISALLOWED_PATH_PREFIXES, is_allowed_url
+from .robots import is_allowed_url, redirect_refusal
 
 #: proxy-auth fallback + one 429 rotation, both bounded
 _MAX_SESSION_ROTATIONS = 1
-
-# ``: FetchResult`` annotations below are inert strings (import deleted per
-# REFACTOR_PLAN phase 2 / REPO_MAP §8.1; never resolved at runtime).
 
 
 class ScrapeRun(ArtifactsMixin, PhasesMixin):
@@ -149,22 +145,17 @@ class ScrapeRun(ArtifactsMixin, PhasesMixin):
         return "407" in text or "proxy" in text and "auth" in text
 
     # Kept separate from robots.is_allowed_url on purpose: its semantics are a
-    # strict SUPERSET of it (host + DISALLOWED_PATH_PREFIXES only — no https/
-    # query/allowlist checks), so reusing is_allowed_url here would tighten the
-    # gate. Verified by: NOTHING (gap — redirect guard untested, REPO_MAP §10.4)
+    # strict SUPERSET of it (host + DISALLOWED_PATH_PREFIXES + snapshot denies
+    # only — no https/query/shape checks), so reusing is_allowed_url here would
+    # tighten the gate and break legal `?` redirects. See docs/decisions.md §2
+    # and robots.redirect_refusal, which both HTTP paths now share.
+    # Verified by: test_redirect_refusal
     @staticmethod
     def _guard_redirect(result: FetchResult):
         """Followed redirects must stay on allowed Zillow paths too."""
-        final = result.final_url
-        if not final or final.rstrip("/") == result.url.rstrip("/"):
-            return
-        parts = urlparse(final)
-        host = (parts.hostname or "").lower()
-        if host not in ("www.zillow.com", "zillow.com"):
-            raise RunError(f"redirected off zillow.com to {final}")
-        path = parts.path
-        if path.startswith(DISALLOWED_PATH_PREFIXES):
-            raise RunError(f"redirected to robots-disallowed path: {path}")
+        refusal = redirect_refusal(result.url, result.final_url)
+        if refusal:
+            raise RunError(refusal)
 
     # --- run ----------------------------------------------------------------
 

@@ -22,8 +22,16 @@ const COUNT_FMT = new Intl.NumberFormat("en-US");
 export const fmtCount = (n: number): string => COUNT_FMT.format(n);
 
 /** `449000` -> `"$449,000"`. The `−` sign glyph some call sites need belongs
- *  at the call site; this only adds the currency sign. */
-export const fmtMoney = (v: number): string => `$${v.toLocaleString()}`;
+ *  at the call site; this only adds the currency sign.
+ *  en-US on purpose, like fmtCount: `v.toLocaleString()` reads the RUNTIME's
+ *  default locale, so a prerendered (server, en-US) "$449,000" and a client in
+ *  a de-DE/fr-FR browser ("449.000"/"449 000") disagreed — a hydration text
+ *  mismatch on every price on the page, and the same listing read two ways in
+ *  two browsers. One fixed locale keeps the string stable everywhere.
+ *  Verified by: TS — MONEY_FMT is module-level; no call site can pass a
+ *   locale. Nothing runs this under a non-en-US default locale (gap). */
+const MONEY_FMT = new Intl.NumberFormat("en-US");
+export const fmtMoney = (v: number): string => `$${MONEY_FMT.format(v)}`;
 
 /** The two coverage-percent rounding rules the site has always had, kept
  *  distinct on purpose so each surface outputs EXACTLY what it used to:

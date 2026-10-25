@@ -8,13 +8,15 @@
 //   window_days=0 default pinned only the newest snapshot so "last seen N days
 //   ago" could never say anything but "today" (recency guard, roadmap 1.1).
 // INPUTS: query params — score (csv), min_dom, min_price, max_price, type,
-//   zip (csv), window_days, limit (≤5000), offset, format=csv; plus the
-//   DATABASE_URL via lib/db/connection, else public/data/listings_sample.csv.
+//   zip (csv), window_days, limit (clamped to [1, EXPORT_LIMIT], lib/limits.ts),
+//   offset, format=csv; plus the DATABASE_URL via lib/db/connection, else
+//   public/data/listings_sample.csv.
 // OUTPUTS: DealsResponse JSON {deals, live, count, window_days,
-//   latest_snapshot_date} or `text/csv` attachment (up to 5000 rows).
+//   latest_snapshot_date} or `text/csv` attachment (EXPORT_LIMIT rows max —
+//   format=csv always requests the ceiling, it is not the page's limit).
 // CALLERS: hooks/useDeals (every page), the CSV export link on /data.
-// Verified by: /api/deals — min_dom parse guard, recency guard, limit ≤5000
-//   clamp (all three named at their own blocks below).
+// Verified by: /api/deals — min_dom parse guard, recency guard, limit clamp
+//   (all three named at their own blocks below).
 import { NextResponse } from "next/server";
 import { applyFilters, type FilterState } from "@/lib/filters";
 import type { Deal, DealsResponse } from "@/lib/api-types";
@@ -24,6 +26,7 @@ import { loadFallbackDeals } from "@/lib/fallback";
 import { parseNum } from "@/lib/format";
 import { maxSnapshotDate } from "@/lib/dates";
 import { SCORES } from "@/lib/scores";
+import { EXPORT_LIMIT, PAGE_LIMIT_DEFAULT, clampLimit } from "@/lib/limits";
 
 // ---- parse(): the query-param guards (incident-driven, see WHY above) ----
 function parse(req: Request) {
@@ -64,14 +67,22 @@ function parse(req: Request) {
     // safe value instead of reaching SQL.
     // Verified by: /api/deals recency guard (default 1; 0 = newest only).
     windowDays: windowRaw == null ? 1 : Math.max(0, Math.floor(windowRaw)),
-    limit: Math.min(Number(u.searchParams.get("limit") ?? 500) || 500, 5000),
+    // clampLimit (lib/limits.ts) is the same named rule the SQL builder uses,
+    // so a page asking for 500 and an export asking for the ceiling cannot
+    // drift apart. `|| PAGE_LIMIT_DEFAULT` keeps the old meaning of limit=0 /
+    // limit=abc: absent, not one row.
+    // Verified by: /api/deals limit clamp — [1, EXPORT_LIMIT] via clampLimit.
+    limit: clampLimit(Number(u.searchParams.get("limit") ?? PAGE_LIMIT_DEFAULT) || PAGE_LIMIT_DEFAULT),
     offset: Number(u.searchParams.get("offset") ?? 0) || 0,
   };
 }
 
 // ---- GET: live SQL path → frozen-CSV fallback → JSON or CSV answer ----
-// CSV export uses the same query path (?format=csv, up to 5k rows) so the
-// download is exactly the filtered view — see websiteplan §6.
+// CSV export uses the same query path (?format=csv) but takes the whole
+// ceiling, not the page's limit: the table on /data shows PAGE_LIMIT_DEFAULT
+// rows, the file is the full filtered cohort up to EXPORT_LIMIT. The download
+// is therefore a SUPERSET of the view, never a copy of it — which is what
+// app/data/export-header.tsx now says out loud.
 // Verified by: NOTHING (gap) — no check compares the CSV body to the JSON view.
 export async function GET(req: Request) {
   const q = parse(req);
@@ -90,7 +101,7 @@ export async function GET(req: Request) {
       maxPrice: q.maxPrice,
       type: q.type,
       windowDays: q.windowDays,
-      limit: wantCsv ? 5000 : q.limit,
+      limit: wantCsv ? EXPORT_LIMIT : q.limit,
       offset: wantCsv ? 0 : q.offset,
     });
     deals = (await sql(text, params)) as Deal[];
@@ -119,7 +130,9 @@ export async function GET(req: Request) {
     const newest = maxSnapshotDate(all);
     const cohort = q.windowDays <= 0 && newest ? all.filter((d) => d.snapshot_date === newest) : all;
     const filtered = applyFilters(cohort, f);
-    deals = wantCsv ? filtered.slice(0, 5000) : filtered.slice(q.offset, q.offset + q.limit);
+    deals = wantCsv
+      ? filtered.slice(0, EXPORT_LIMIT)
+      : filtered.slice(q.offset, q.offset + q.limit);
   }
 
   if (wantCsv) {

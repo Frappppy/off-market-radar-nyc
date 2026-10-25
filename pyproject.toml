@@ -20,3 +20,34 @@ addopts = "-ra"
 # (see `tests/test_scrape.py` proxy/scrub tests, which silently `pytest.skip`
 # without DATAIMPULSE_* env vars) are ever given a marker, register it here so
 # `pytest -m "not db"` style selection works and skips become visible.
+
+[tool.mypy]
+python_version = "3.11"
+namespace_packages = true
+explicit_package_bases = true
+strict_optional = true
+warn_unused_ignores = true
+ignore_missing_imports = true
+# The CI gate is `mypy src` — the nightly pipeline's own code. `files` makes a
+# bare `mypy` reproduce it. scripts/ and dashboard/ are NOT in scope yet: they
+# carry 12 known errors (measured 2026-10-25) and a gate that starts red is not
+# a gate, so widening is a deliberate later step, not a silent one.
+files = ["src"]
+
+# ruff — the CI lint gate (.github/workflows/checks.yml).
+#
+# `select` is ruff's own default set (E4/E7/E9 + F: syntax errors, unreachable
+# code, unused imports/variables, undefined names) because that is the set this
+# tree passes CLEAN on today (measured 2026-10-25: 0 findings over
+# src/scripts/tests/dashboard). Everything stricter is knowingly deferred and
+# measured, not guessed: adding E501 alone is 218 findings, the fuller
+# E,F,W,I,UP,B,SIM,C4,RUF set is 282. Widening the list below is how the gate
+# grows — the CI command stays `ruff check src scripts tests dashboard`.
+[tool.ruff]
+target-version = "py311"
+line-length = 100        # documents intent only; E501 is not selected (see above)
+src = ["src", "scripts", "tests", "dashboard"]
+extend-exclude = ["site", "jobs", ".venv", "node_modules"]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F"]

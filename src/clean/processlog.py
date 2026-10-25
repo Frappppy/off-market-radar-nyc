@@ -158,7 +158,7 @@ def _failed_log(run_id: str, started_at: str, input_path: Path, error: str) -> s
 def _write_failure_artifacts(out_dir: Path, run_id: str, started_at: str, input_path: Path, error: str) -> None:
     try:
         out_dir.mkdir(parents=True, exist_ok=True)
-        manifest = {key: None for key in MANIFEST_KEYS}
+        manifest: dict[str, str | None] = {key: None for key in MANIFEST_KEYS}
         manifest.update(
             {
                 "stage": "clean",

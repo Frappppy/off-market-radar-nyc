@@ -1,14 +1,18 @@
 """WHAT:      Stage-1 (scrape) guards — search/detail parsers, record building,
-           property-type normalisation, robots gate, proxy-secret handling,
-           CAPTCHA detection, CLI defaults, run-id resolution, detail ordering.
+           property-type normalisation, the robots URL-shape gate, proxy-secret
+           handling, the CAPTCHA marker, CLI defaults, run-id resolution, detail
+           ordering.
 WHY:       The only code that touches Zillow; pinned OFFLINE (synthetic page
            fixtures in tests/fixtures/zillow_pages.py) so parser or policy
            drift fails here, not on the next scheduled run — no DNS, proxy or
            credential is ever involved.
 INPUTS:    tests/fixtures/zillow_pages.py + src.scrape.* (imports only).
 OUTPUTS:   pytest verdicts only; no files written outside tmp_path.
-CALLERS:   `python -m pytest` — suite baseline: 155 passed, 2 skipped (the two
-           proxy tests skip without DATAIMPULSE_* credentials).
+CALLERS:   `python -m pytest` — the current suite count lives in tests/README.md,
+           not here, because a number in a docstring is the first thing to rot.
+           Two sibling modules hold what this one outgrew:
+           tests/test_scrape_block.py (the 403-with-payload rule) and
+           tests/test_scrape_robots_snapshot.py (the robots snapshot authority).
 """
 
 import pytest

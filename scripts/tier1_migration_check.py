@@ -40,7 +40,7 @@ REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
 
 from src.store import db as store_db  # noqa: E402  (the shipped code path)
-from src.store.mapping import LISTING_COLUMNS, SNAPSHOT_COLUMNS  # noqa: E402
+from src.store.mapping import LISTING_COLUMNS  # noqa: E402
 
 ADMIN_DSN = os.environ.get("DATABASE_URL", "")
 if not ADMIN_DSN:
@@ -292,7 +292,7 @@ check(ok, "D4 views.sql re-applies", "ok", err)
 for obj in ["vw_latest_listings", "vw_zip_price_drop_30d"]:
     ok, err = as_role(f"SELECT count(*) FROM {obj}")
     check(not ok, f"D5 H1 REPRODUCED: the reader LOST SELECT on {obj} after the re-apply", "permission denied", "still readable")
-ok, err = as_role(f"SELECT count(*) FROM vw_listing_history")
+ok, err = as_role("SELECT count(*) FROM vw_listing_history")
 check(not ok, "D6 the recreated vw_listing_history is unreadable too until granted", "permission denied", "readable")
 ok, err = as_role("SELECT count(*) FROM pipeline_runs")
 check(ok, "D7 pipeline_runs keeps its grant (it is not dropped - only the views are)", "ok", err)

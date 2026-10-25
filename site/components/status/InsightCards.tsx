@@ -10,9 +10,10 @@
 //           cohort the explorer shows, so they move when the filters move.
 //           Every state is honest: loading says "…", a failed fetch says so,
 //           an empty filter says so — never a number before there is one.
-// INPUTS:   useFilters (URL filter state), useDeals (cohort + tri-state,
-//           gated on the URL store's `ready` so one fetch serves the reader's
-//           own query), useMeta (total_tracked → coverageNote scope).
+// INPUTS:   useFilters (URL filter state), useDeals (cohort + tri-state +
+//           cohort `live`, gated on the URL store's `ready` so one fetch serves
+//           the reader's own query), useMeta (total_tracked → coverageNote
+//           scope).
 // OUTPUTS:  the <section> grid of three <article> panels.
 // CALLERS:  app/page.tsx (the overview), replacing the hardcoded cards.
 // Verified by: shots/phase3-runtime-gate.json → home_insights.default,
@@ -27,6 +28,7 @@ import { useDeals } from "@/hooks/useDeals";
 import { useMeta } from "@/hooks/useMeta";
 import { useFilters, toDealsQuery } from "@/lib/useFilters";
 import { useUrlSearchReady } from "@/lib/useUrlSearch";
+import { PAGE_LIMIT_DEFAULT } from "@/lib/limits";
 import { coverageNote } from "@/lib/market";
 import { median } from "@/lib/stats";
 
@@ -36,9 +38,10 @@ const ERR = "Couldn't load listings — reload to try again.";
 export default function InsightCards() {
   const [filters] = useFilters();
   const ready = useUrlSearchReady();
-  const { deals, loaded, loadError } = useDeals(toDealsQuery(filters, { limit: "500" }), {
-    enabled: ready,
-  });
+  const { deals, loaded, loadError, live } = useDeals(
+    toDealsQuery(filters, { limit: String(PAGE_LIMIT_DEFAULT) }),
+    { enabled: ready }
+  );
   const { meta } = useMeta(ready);
 
   const insight = useMemo(() => {
@@ -92,6 +95,14 @@ export default function InsightCards() {
     {
       title: "How complete this is",
       body:
+        // Provenance first, because this section mixes two datasets: the two
+        // cards above are computed from the COHORT (/api/deals) and the scope
+        // note below is from /api/meta. Those two requests fall back
+        // independently, so the header pill cannot speak for the cards — the
+        // third card states which dataset THESE numbers were counted from.
+        // Verified by: NOTHING (gap) — no key forces live:false on /api/deals
+        //   while /api/meta stays live to compare the sentence.
+        (live === false ? "These figures come from the bundled sample, not a live run. " : "") +
         (scope != null ? `${scope}. ` : meta == null ? "… " : "No snapshot yet. ") +
         "The ingest follows robots-allowed paths at 5s pacing and hard-stops on any CAPTCHA; coverage is near-complete for Zillow actives but not guaranteed exhaustive." +
         // The score's drop half needs price history, which only comes from a

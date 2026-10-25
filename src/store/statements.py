@@ -1,7 +1,7 @@
 """WHAT:           All stage-3 SQL statements as constants — the two upserts
               (``_INSERT_LISTING``, ``_INSERT_SNAPSHOT``), the pipeline_runs
-              bookkeeping (``_START_RUN``, ``_FINISH_RUN``) and the stale
-              listing marker (``_MARK_STALE`` + ``STALE_RUNS``).
+              bookkeeping (``_START_RUN``, ``_FINISH_RUN``, ``_RECORD_FAILURE``)
+              and the stale listing marker (``_MARK_STALE`` + ``STALE_RUNS``).
 WHY:            Column order in the INSERTs must equal
               ``mapping.LISTING_COLUMNS``/``SNAPSHOT_COLUMNS`` (REPO_MAP I12);
               keeping every statement in one file makes that contract
@@ -12,7 +12,8 @@ CALLERS:        ``src.store.db`` (executes them); SQL-text assertions in
               ``tests/test_schema_sqlglot.py``, ``tests/test_store_db.py``,
               ``tests/test_store_stale.py`` (via ``db.*``).
 TESTED BY:      I4/I5/I6/I12 in ``tests/test_schema_sqlglot.py``,
-              ``tests/test_store_stale.py``.
+              ``tests/test_store_stale.py``,
+              ``test_record_failure_sql_never_overwrites_a_terminal_run``.
 """
 
 from .mapping import LISTING_COLUMNS, SNAPSHOT_COLUMNS
@@ -74,6 +75,36 @@ UPDATE pipeline_runs
 SET finished_at = now(), status = %s, records_scraped = %s,
     records_loaded = %s, notes = %s
 WHERE run_id = %s
+"""
+
+# --- failure recording for runs that never reached stage 3 -------------------
+
+# WHY THIS EXISTS: when stage 1 (or 2) aborts, scripts/run_daily.py skips the
+# store stage entirely, so NOTHING ever writes a pipeline_runs row and the run
+# is invisible — /api/health then reports `runs_failed_30d: 0` for a month of
+# failures. The orchestrator calls `python -m src.store --record-failure` to
+# close the loop, and this statement is written so that call is always safe:
+#
+#   * no row yet (scrape/clean died before stage 3 started)  -> insert `failed`;
+#   * row still `running` (stage 3 crashed mid-transaction)  -> close it;
+#   * row already terminal (`success` / `failed`)            -> UNTOUCHED, so a
+#     stage-3 failure note written by its own except-path is never overwritten
+#     by the orchestrator's blunter one, and a successful run can never be
+#     renamed. `CASE … ELSE pipeline_runs.status END` and the two COALESCEs are
+#     what make the statement a no-op in exactly that case.
+#
+# started_at is COALESCE(%s, now()): the orchestrator knows the real UTC start
+# from the run_id, but a hand-invoked call with an odd id still gets a timestamp.
+# Verified by: test_record_failure_sql_never_overwrites_a_terminal_run
+_RECORD_FAILURE = """
+INSERT INTO pipeline_runs (run_id, started_at, finished_at, status, source, notes)
+VALUES (%s, COALESCE(%s, now()), now(), 'failed', %s, %s)
+ON CONFLICT (run_id) DO UPDATE SET
+  started_at  = COALESCE(pipeline_runs.started_at, EXCLUDED.started_at),
+  finished_at = COALESCE(pipeline_runs.finished_at, now()),
+  status      = CASE WHEN pipeline_runs.status = 'running'
+                     THEN 'failed' ELSE pipeline_runs.status END,
+  notes       = COALESCE(pipeline_runs.notes, EXCLUDED.notes)
 """
 
 # --- stale-listing marker ---------------------------------------------------

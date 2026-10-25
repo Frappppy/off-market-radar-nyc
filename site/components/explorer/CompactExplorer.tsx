@@ -15,9 +15,11 @@ import { useId, useMemo, useState } from "react";
 import Link from "next/link";
 import { useDeals } from "@/hooks/useDeals";
 import { useMeta } from "@/hooks/useMeta";
+import { useCommittedRange } from "@/hooks/useCommittedRange";
 import { useUrlSearch, useUrlSearchReady } from "@/lib/useUrlSearch";
-import DealMap from "@/components/listings/DealMap";
+import DealMapLazy from "@/components/listings/DealMapLazy";
 import FilterNotices from "@/components/filters/FilterNotices";
+import CohortSource from "@/components/status/CohortSource";
 import SideCard from "@/components/listings/SideCard";
 import { useFilters, toDealsQuery, filterNotices } from "@/lib/useFilters";
 import type { Deal, MotivationScore } from "@/lib/api-types";
@@ -71,7 +73,7 @@ export default function CompactExplorer() {
   // Verified by: shots/phase3-runtime-gate.json → cancelledRequests + notes
   //   (abort-on-supersede, by design); the wasted-SSR-default-fetch claim is
   //   not keyed (gap).
-  const { deals } = useDeals(query, {
+  const { deals, live } = useDeals(query, {
     enabled: ready,
     onSuccess: (r) => setLatestSnapshot(r.latest_snapshot_date ?? null),
   });
@@ -85,6 +87,9 @@ export default function CompactExplorer() {
     const has = filters.score.includes(s);
     setFilters({ score: has ? filters.score.filter((x) => x !== s) : [...filters.score, s] });
   };
+
+  // Drag commits on release, keyboard per step — one /api/deals per gesture.
+  const dom = useCommittedRange(filters.minDom, (minDom) => setFilters({ minDom }));
 
   const hidden = hiddenFilterLabels(filters);
   const notices = filterNotices(filters, sp.get("score"), sp.get("min_dom"));
@@ -125,12 +130,15 @@ export default function CompactExplorer() {
           ))}
         </div>
         <label htmlFor={domId} className="flex items-center gap-2 text-xs text-zinc-400">
-          DOM ≥ {filters.minDom}
+          DOM ≥ {dom.value}
+          {/* Same deferred commit as the full panel's slider (see
+              hooks/useCommittedRange.ts) — this is the control on the landing
+              page, where a drag used to mean up to 36 /api/deals calls. */}
           <input
             id={domId}
-            type="range" min={0} max={180} step={5} value={filters.minDom}
-            onChange={(e) => setFilters({ minDom: Number(e.target.value) })}
+            type="range" min={0} max={180} step={5}
             className="h-6 w-28"
+            {...dom.handlers}
           />
         </label>
         {/* The pool is the newest daily scan, not the ledger — stated in the
@@ -139,6 +147,13 @@ export default function CompactExplorer() {
         <span className="text-xs text-zinc-400" title="The pool is the newest daily scan's listings — homes sell or delist, so it moves daily; the full ledger only grows.">
           {deals.length} of {total ?? "…"} shown
         </span>
+        {/* The count above is only as live as the request that produced it.
+            Inline in the toolbar, appearing only in the frozen case; it can
+            wrap this row, which is the same accepted trade-off as
+            components/filters/FilterNotices below.
+            Verified by: NOTHING (gap) — no key forces live:false to read the
+            pill, nor measures the toolbar row in that state. */}
+        <CohortSource live={live} suffix="these pins" />
         <button className="tap text-xs text-zinc-400 underline" onClick={resetFilters}>Reset</button>
         <Link href={mapHref} className="tap ml-auto text-xs font-medium text-zinc-100 underline">
           Full map →
@@ -163,7 +178,7 @@ export default function CompactExplorer() {
           <FilterNotices value={filters} />
         </div>
       )}
-      <DealMap deals={deals} onPick={setPicked} height={420} />
+      <DealMapLazy deals={deals} onPick={setPicked} height={420} />
       {/* Compact mode: the panel sits BELOW the 420px preview, never over it —
           the mini map is the whole point of the overview page. Picking another
           pin replaces `picked`, so cards never stack. Width matches the /map

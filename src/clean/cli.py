@@ -146,13 +146,14 @@ def main(argv: list[str] | None = None) -> int:
             (parquet_path.name, len(frame), parquet_path.stat().st_size),
             (csv_path.name, len(frame), csv_path.stat().st_size),
         ]
-        manifest = {
+        finished_at = utc_now_iso()
+        manifest: dict[str, str | int] = {
             "stage": "clean",
             "run_id": run_id,
             "records_in": stats.records_in,
             "records_out": stats.records_out,
             "started_at": started_at,
-            "finished_at": utc_now_iso(),
+            "finished_at": finished_at,
             "status": "success",
         }
         write_manifest(out_dir, manifest)
@@ -160,7 +161,7 @@ def main(argv: list[str] | None = None) -> int:
             _build_log(
                 run_id=run_id,
                 started_at=started_at,
-                finished_at=manifest["finished_at"],
+                finished_at=finished_at,
                 input_path=input_path,
                 out_dir=out_dir,
                 stats=stats,

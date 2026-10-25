@@ -8,18 +8,20 @@
 //           the table in ./top-deals.tsx; the shell keeps only the data
 //           wiring. Every visible string and value moved verbatim.
 // INPUTS:   useFilters (URL filter state), useDeals (filtered rows +
-//           loaded/loadError tri-state), /api/zips (filter-independent ZIP
-//           daily snapshots).
+//           loaded/loadError/live tri-state), /api/zips (filter-independent
+//           ZIP daily snapshots + its own live flag).
 // OUTPUTS:  the rendered /trends page.
 // CALLERS:  the Next.js router (app/trends/page.tsx route).
 import { Suspense, useEffect, useMemo, useState } from "react";
 import IngestionHealth from "@/components/status/IngestionHealth";
+import CohortSource from "@/components/status/CohortSource";
 import FilterNotices from "@/components/filters/FilterNotices";
 import ShareLink from "@/components/filters/ShareLink";
 import type { ZipTrend } from "@/lib/api-types";
 import { useDeals } from "@/hooks/useDeals";
 import { useFilters, toDealsQuery } from "@/lib/useFilters";
 import { useUrlSearchReady } from "@/lib/useUrlSearch";
+import { PAGE_LIMIT_DEFAULT } from "@/lib/limits";
 import { buildKpis, makeDescribe } from "./kpis";
 import { deriveCharts } from "./derivations";
 import { TrendLine } from "./charts/TrendLine";
@@ -56,14 +58,20 @@ function TrendsInner() {
   const ready = useUrlSearchReady();
 
   // /api/zips is filter-independent, so it does not wait on the store.
+  // Its `live` flag is kept, not dropped: a chart drawn from the bundled
+  // sample has to say so, and /api/meta's header pill cannot tell us — the
+  // snapshot series and the cohort below it are two separate requests.
   // Verified by: NOTHING (gap) — no key asserts /api/zips resolves while the
-  //   filter store is still settling.
+  //   filter store is still settling, or reads back j.live.
+  const [zipsLive, setZipsLive] = useState<boolean | null>(null);
   useEffect(() => {
     let dead = false;
     fetch("/api/zips")
       .then((r) => r.json())
       .then((j) => {
-        if (!dead) setTrends(j.trends ?? []);
+        if (dead) return;
+        setTrends(j.trends ?? []);
+        setZipsLive(typeof j.live === "boolean" ? j.live : null);
       })
       .catch(() => {
         if (!dead) setTrends([]);
@@ -78,9 +86,16 @@ function TrendsInner() {
   // one; a superseded or unmounted request is aborted and its result discarded.
   // Verified by: shots/phase3-runtime-gate.json → cancelledRequests + notes
   //   (superseded useDeals requests abort; aborts are by design, not failures).
-  const { deals, loaded, loadError } = useDeals(toDealsQuery(filters, { limit: "500" }), {
-    enabled: ready,
-  });
+  const { deals, loaded, loadError, live } = useDeals(
+    toDealsQuery(filters, { limit: String(PAGE_LIMIT_DEFAULT) }),
+    { enabled: ready }
+  );
+
+  // Every number on this page is either a cohort statistic or a snapshot
+  // series, so the provenance label is the conjunction of the two requests:
+  // frozen if EITHER fell back, live only once BOTH answered live.
+  const cohortLive: boolean | null =
+    live === false || zipsLive === false ? false : live === true && zipsLive === true ? true : null;
 
   // One memo for all series (was eight): same pure computations, moved to
   // derivations.ts, so every chart draws exactly the data it drew before.
@@ -125,6 +140,20 @@ function TrendsInner() {
           Verified by: NOTHING (gap) — no gate key loads /trends with an
           un-honourable param to compare the notice. */}
       <FilterNotices value={filters} />
+
+      {/* Every KPI, chart and row below is counted from whichever dataset
+          answered — the cohort request or the snapshot series. The header
+          pill reads /api/meta, a third request, so it cannot make this claim.
+          Conditional text: the frozen case adds a line here (CLS gap, same
+          class as FilterNotices above), and it is the only case where the
+          numbers on this page are not Neon's.
+          Verified by: NOTHING (gap) — no key forces live:false on /api/deals
+          or /api/zips to read this line back. */}
+      {cohortLive === false && (
+        <p className="text-xs text-zinc-500">
+          <CohortSource live={cohortLive} suffix="the KPIs and charts" />
+        </p>
+      )}
 
       <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-white/10 bg-white/10 md:grid-cols-4">
         {kpis.map(([label, value, note]) => (

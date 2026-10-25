@@ -5,14 +5,16 @@
 //   filter-dependent (the filtered cohort is the map's job). Inline comments
 //   carry the two measured defects (F2 paragraph CLS) and why they are fixed.
 // INPUTS: /api/meta via useMeta + one unfiltered cohort via useDeals
-//   ("score=High,Medium,Low&min_dom=0&limit=500"); errors swallowed exactly as
-//   the old inline effects swallowed them — every placeholder says "…" or "—".
+//   ("score=High,Medium,Low&min_dom=0&limit=PAGE_LIMIT_DEFAULT"); errors
+//   swallowed exactly as the old inline effects swallowed them — every
+//   placeholder says "…" or "—".
 // OUTPUTS: the <section> hero (its h1 is the page's only h1).
 // CALLERS: app/page.tsx.
 "use client";
 import Link from "next/link";
 import { useDeals } from "@/hooks/useDeals";
 import { useMeta } from "@/hooks/useMeta";
+import { PAGE_LIMIT_DEFAULT } from "@/lib/limits";
 import { coverageNote, fmtCount, marketSizeLabel, MARKET_REFERENCE } from "@/lib/market";
 import { fmtPct } from "@/lib/format";
 
@@ -26,7 +28,16 @@ export default function HeroStats() {
   // below already says "…" or "—" until a payload lands.
   // Verified by: NOTHING (gap) — nothing exercises the swallowed-error path.
   const { meta } = useMeta();
-  const { deals } = useDeals("score=High%2CMedium%2CLow&min_dom=0&limit=500");
+  const { deals, live } = useDeals(
+    `score=High%2CMedium%2CLow&min_dom=0&limit=${PAGE_LIMIT_DEFAULT}`
+  );
+
+  // The two averages below are cohort numbers, but the eyebrow pill only
+  // speaks for /api/meta. The two requests fall back independently, so the
+  // cells that are computed from the cohort carry the cohort's own answer.
+  // Verified by: NOTHING (gap) — no key forces live:false on /api/deals while
+  //   /api/meta stays live to compare the two labels.
+  const cohortNote = live === false ? " · bundled sample" : "";
 
   const drops = deals.map((d) => d.price_drop_pct).filter((v): v is number => v != null);
   const doms = deals.map((d) => d.days_on_market).filter((v): v is number => v != null);
@@ -55,8 +66,8 @@ export default function HeroStats() {
         : scope ?? `snapshot ${meta?.snapshot_date ?? "—"}`,
     ],
     ["High motivation", high != null ? fmtCount(high) : "…", pctHigh != null ? `${pctHigh}% of tracked` : "score = High"],
-    ["Avg price drop", avgDrop != null ? fmtPct(avgDrop) : "—", "across listings with a cut"],
-    ["Avg DOM", avgDom != null ? String(Math.round(avgDom)) : "—", "days on market"],
+    ["Avg price drop", avgDrop != null ? fmtPct(avgDrop) : "—", `across listings with a cut${cohortNote}`],
+    ["Avg DOM", avgDom != null ? String(Math.round(avgDom)) : "—", `days on market${cohortNote}`],
   ];
 
   return (

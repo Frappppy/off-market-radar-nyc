@@ -1,13 +1,15 @@
 """WHAT:      scripts/run_daily.py guards — UTC run_id format, the daily volume
            policy (30 pages / 120 details / 5s), stage command construction,
            --skip-scrape reuse rules, latest_raw_dir, run_log.md evidence for
-           success/failure/skip flows, and config/*.local.env precedence.
+           success/failure/skip flows, the ingestion-failure recording hook,
+           and config/*.local.env precedence.
 WHY:       The orchestrator is what CI actually executes; its defaults ARE the
            compliance/volume policy and its failure semantics decide whether a
            bad run exits non-zero. Stages are tiny scripted subprocesses.
-INPUTS:    the run_daily module (imported by file path) + tmp_path.
+INPUTS:    the run_daily module (imported by file path), src.common.ingestion
+           and tmp_path.
 OUTPUTS:   pytest verdicts only; run_log.md files inside tmp_path.
-CALLERS:   `python -m pytest` — suite baseline: 155 passed, 2 skipped.
+CALLERS:   `python -m pytest` — the current suite count lives in tests/README.md.
 """
 
 import importlib.util
@@ -22,6 +24,8 @@ _SPEC = importlib.util.spec_from_file_location("run_daily", ROOT / "scripts" / "
 run_daily = importlib.util.module_from_spec(_SPEC)
 sys.modules["run_daily"] = run_daily  # dataclasses need the module registered
 _SPEC.loader.exec_module(run_daily)
+
+from src.common import ingestion  # noqa: E402  (run_daily put ROOT on sys.path)
 
 
 def test_utc_run_id_format():
@@ -125,6 +129,123 @@ def test_run_pipeline_intentional_skip_is_not_failure(tmp_path):
     assert rc == 0
     assert "SKIPPED: --skip-scrape" in log
     assert "overall: success" in log
+
+
+# --- ingestion-failure recording (the pipeline_runs visibility hook) ---------
+# The policy lives in src/common/ingestion.py (run_daily's line budget); the
+# orchestrator owns only the decision to call it.
+
+
+def test_failure_note_names_the_stage_exit_and_last_line():
+    f = ingestion.RunFailure("20261020-101500", "scrape", 1, "scrape failed: blocked ")
+    assert f.note == "stage `scrape` failed (exit 1): scrape failed: blocked"
+    # multi-line / padded detail is collapsed to one safe line, then capped
+    noisy = ingestion.RunFailure("r", "clean", 2, "boom\n  Traceback...\n" + "y" * 900)
+    assert len(noisy.note) == ingestion.NOTE_LIMIT
+    assert "\n" not in noisy.note
+    # no output at all (killed process) still names the stage and exit code
+    assert ingestion.RunFailure("r", "store", 3, None).note == "stage `store` failed (exit 3)"
+
+
+def test_record_failure_command_shape():
+    f = ingestion.RunFailure("20261020-101500", "scrape", 1, "scrape failed: blocked")
+    assert ingestion.record_failure_command(f, interpreter="PY") == [
+        "PY", "-m", "src.store", "--record-failure",
+        "--run-id", "20261020-101500",
+        "--note", "stage `scrape` failed (exit 1): scrape failed: blocked",
+    ]
+
+
+def test_record_ingestion_failure_is_best_effort(monkeypatch):
+    """A recorder that cannot run must only produce a log line — no raise, so a
+    dead database never turns one failed run into a crashed orchestrator."""
+
+    class _Proc:
+        returncode = 2
+        stdout = ""
+        stderr = "src.store: ERROR: postgresql://u:***@host/db refused"
+
+    monkeypatch.setattr(ingestion.subprocess, "run", lambda *a, **k: _Proc())
+    line = ingestion.record_ingestion_failure(
+        ingestion.RunFailure("r", "scrape", 1, "blocked")
+    )
+    assert line.startswith("- pipeline_runs: failure NOT recorded (exit 2)")
+
+    def explode(*a, **k):
+        raise OSError("no python here")
+
+    monkeypatch.setattr(ingestion.subprocess, "run", explode)
+    assert "NOT recorded" in ingestion.record_ingestion_failure(
+        ingestion.RunFailure("r", "scrape", 1, None)
+    )
+
+    _Proc.returncode = 0
+    monkeypatch.setattr(ingestion.subprocess, "run", lambda *a, **k: _Proc())
+    line = ingestion.record_ingestion_failure(
+        ingestion.RunFailure("r", "scrape", 1, None)
+    )
+    assert "status `failed` recorded (stage `scrape` failed (exit 1))" in line
+
+
+def test_run_pipeline_calls_the_failure_recorder_once(tmp_path):
+    seen = []
+
+    def recorder(failure):
+        seen.append(failure)
+        return f"- pipeline_runs: recorded {failure.run_id} {failure.stage}"
+
+    stages = [
+        run_daily.Stage("scrape", [sys.executable, "-c", "print('scrape failed: blocked'); import sys; sys.exit(1)"]),
+        run_daily.Stage("clean", [sys.executable, "-c", "print('must-not-run')"]),
+    ]
+    rc = run_daily.run_pipeline(stages, "20990101-000003", root=tmp_path, on_failure=recorder)
+    assert rc == 1
+    assert len(seen) == 1
+    assert (seen[0].run_id, seen[0].stage, seen[0].exit_code) == (
+        "20990101-000003", "scrape", 1,
+    )
+    assert seen[0].detail == "scrape failed: blocked"  # last output line, for the note
+    log = (tmp_path / "jobs" / "20990101-000003" / "run_log.md").read_text(encoding="utf-8")
+    assert "- pipeline_runs: recorded 20990101-000003 scrape" in log
+    # ...and it sits in the Summary block, beside the overall verdict
+    assert log.index("| scrape | failed (exit 1) |") < log.index("pipeline_runs: recorded")
+
+
+def test_run_pipeline_recorder_not_called_on_success(tmp_path):
+    seen = []
+    stages = [run_daily.Stage("scrape", [sys.executable, "-c", "print('ok')"])]
+    rc = run_daily.run_pipeline(
+        stages, "20990101-000004", root=tmp_path, on_failure=lambda f: seen.append(f) or ""
+    )
+    assert rc == 0
+    assert seen == []
+
+
+def test_run_pipeline_survives_a_raising_recorder(tmp_path):
+    def explode(failure):
+        raise RuntimeError("recorder blew up")
+
+    stages = [run_daily.Stage("scrape", [sys.executable, "-c", "import sys; sys.exit(1)"])]
+    rc = run_daily.run_pipeline(stages, "20990101-000005", root=tmp_path, on_failure=explode)
+    assert rc == 1  # still the stage failure, not a crash
+    log = (tmp_path / "jobs" / "20990101-000005" / "run_log.md").read_text(encoding="utf-8")
+    assert "failure NOT recorded (RuntimeError: recorder blew up)" in log
+
+
+def test_main_wires_the_ingestion_recorder(monkeypatch):
+    """`main` (what CI runs) must pass the real recorder — a wiring regression
+    here silently returns the invisibility of failed runs."""
+    wired = {}
+
+    def fake_pipeline(stages, run_id, root, *, on_failure=None):
+        wired["on_failure"] = on_failure
+        return 0
+
+    monkeypatch.setattr(run_daily, "run_pipeline", fake_pipeline)
+    monkeypatch.setattr(run_daily, "load_local_env", lambda root=None: [])
+    monkeypatch.setattr(run_daily, "build_stages", lambda *a, **k: [])
+    assert run_daily.main(["--run-id", "20990101-000009"]) == 0
+    assert wired["on_failure"] is ingestion.record_ingestion_failure
 
 
 def test_load_local_env_does_not_override_real_env(monkeypatch, tmp_path):
