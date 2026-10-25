@@ -9,10 +9,12 @@
 > ([REFACTOR_PLAN.md](REFACTOR_PLAN.md)).
 > Verified **2026-10-25**: `pytest` **220 passed** · `ruff check src scripts
 > tests dashboard` + `mypy src` clean · `dashboard/verify_contract.py` **54/54**
-> · all four CLIs `--help` exit 0. Caveat that still holds: `mypy src` is green
-> here because the *runtime* interpreter (3.14) and the declared target now
-> agree — the local env carries numpy 2.4.6 while `requirements.txt` pins
-> 2.5.4, so CI is the only place the pinned stubs are actually parsed.
+> · all four CLIs `--help` exit 0.
+> Caveat worth carrying: this machine's conda env drifts from the pins on four
+> packages (numpy 2.4.6, pandas 3.0.3, sqlglot 30.24.0, pytest 9.0.3), which is
+> what made the first `mypy` gate pass locally and fail in CI. `src/` is now
+> clean in **both** pictures — re-measure against a venv built from
+> requirements.txt before trusting a local typecheck (`docs/decisions.md` §13).
 >
 > Orientation order for a new human/agent: **this file → the directory README
 > (`README.md` in each dir) → the file's own T0 header**. Detail sources:

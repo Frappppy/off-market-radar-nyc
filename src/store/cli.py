@@ -171,8 +171,19 @@ def main(argv: list[str] | None = None) -> int:
                 apply_schema(conn)
             start_pipeline_run(conn, run_id, source_field)
         # Row mapping is pure CPU, so it happens OUTSIDE the write transaction.
-        listing_rows = [listing_tuple(row) for row in df.to_dict("records")]  # type: ignore[arg-type]
-        snapshot_rows = [snapshot_tuple(row) for row in df.to_dict("records")]  # type: ignore[arg-type]
+        # The record list is built ONCE and shared by both maps (two calls to
+        # to_dict produced two identical lists). The mapping helpers take
+        # Mapping[Any, Any] rather than Mapping[str, Any] precisely because
+        # pandas types this return as list[dict[Hashable, Any]] in some releases
+        # and list[dict[str, Any]] in others: pinning the key type here would
+        # need a `# type: ignore` that is correct for exactly one pandas
+        # version, and with warn_unused_ignores = true the other version turns
+        # the CI typecheck red for an unused suppression. Clean under both
+        # (verified: mypy 1.20.2 against pandas 3.0.6/numpy 2.5.4 — the pins —
+        # and against pandas 3.0.3/numpy 2.4.6).
+        records = df.to_dict("records")
+        listing_rows = [listing_tuple(row) for row in records]
+        snapshot_rows = [snapshot_tuple(row) for row in records]
         # Transaction 2 — data, success marker and stale-marking in ONE commit.
         # They must not be separable: `last_seen_at = now()` / `is_active = true`
         # are the store's claim that a listing was seen BY A SUCCESSFUL RUN, and

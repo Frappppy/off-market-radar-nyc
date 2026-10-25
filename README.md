@@ -131,6 +131,11 @@ $PY -m pytest -q                  # 220 passed (2026-10-25). The DataImpulse-cre
                                   # exists; without it they skip.
 $PY -m ruff check src scripts tests dashboard   # 0 findings — the CI lint gate
 $PY -m mypy src                   # Success — the CI typecheck gate
+                                  # If it disagrees with CI, measure in the pinned env:
+                                  #   python -m venv /tmp/pinnedenv && /tmp/pinnedenv/bin/python -m pip \
+                                  #     install -r requirements.txt -r requirements-dev.txt
+                                  #   /tmp/pinnedenv/bin/python -m mypy src
+                                  # (this machine's env drifts on 4 pins — docs/decisions.md §13)
 $PY dashboard/verify_contract.py  # 54/54, exit 0
 # scripts/*.ps1 are Windows-only; neither runs on this platform.
 ```

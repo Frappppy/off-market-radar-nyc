@@ -4,7 +4,9 @@ WHY:        Every null/enum/NOTNULL decision for the two upserts lives in
            one reviewable place; conversions are null-safe so pandas
            NaN/NaT/NA and numpy scalars become plain Python values that
            psycopg can adapt. No database access here — unit-testable alone.
-INPUTS:     A cleaned row as ``Mapping[str, Any]`` (``df.to_dict("records")``).
+INPUTS:     A cleaned row as ``Mapping[Any, Any]`` (``df.to_dict("records")`` —
+            pandas keys it ``Hashable`` in some releases and ``str`` in others,
+            and these readers only ever look up literal column names).
 OUTPUTS:    13-tuple (listings) / 12-tuple (snapshots); ``MappingError``
            (imported from ``scalars``) on unusable rows.
 CALLERS:    ``src.store.cli`` (per-row before each upsert transaction).
@@ -83,7 +85,7 @@ def require_columns(df: pd.DataFrame, columns: tuple[str, ...], stage_label: str
 # --- row mappers ------------------------------------------------------------
 
 
-def listing_tuple(row: Mapping[str, Any]) -> tuple:
+def listing_tuple(row: Mapping[Any, Any]) -> tuple:
     """contract listings row; address prefers the normalized address_std.
     Verified by: test_listing_address_falls_back_to_raw_and_nan_to_none"""
     source = _text(row.get("source"))
@@ -108,7 +110,7 @@ def listing_tuple(row: Mapping[str, Any]) -> tuple:
     )
 
 
-def snapshot_tuple(row: Mapping[str, Any]) -> tuple:
+def snapshot_tuple(row: Mapping[Any, Any]) -> tuple:
     source = _text(row.get("source"))
     listing_id = _text(row.get("listing_id"))
     if source is None or listing_id is None:

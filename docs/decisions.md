@@ -254,3 +254,45 @@ counts on every run.
 **Consequences.** 22,577 raw rows → 22,317 analysed rows; High 1,855 → 1,844.
 The guard lives in stage 2 only — the raw JSONL keeps every row, so raising or
 lowering the thresholds later costs one re-clean, not a re-scrape.
+
+## 13. No `# type: ignore` on the store's row mapping (2026-10-25)
+
+**Context.** The first `checks.yml` run to carry the `mypy src` gate failed
+twice, for two different reasons that are the same defect:
+
+1. run 40197244569 died on `numpy/__init__.pyi:737: Type statement is only
+   supported in Python 3.12 and greater` — `[tool.mypy] python_version` said
+   `"3.11"` while the workflow installs `"3.14"` and `requirements.txt` pins
+   `numpy==2.5.4`, whose stubs use PEP 695 `type`. mypy stopped *before reading
+   a single file under `src/`*: the gate was red **and** vacuous.
+2. run 40197801118, with the target corrected, then reported the two
+   `# type: ignore[arg-type]` suppressions at `src/store/cli.py:174-175` as
+   **unused**.
+
+**Root cause of (2).** pandas keys `df.to_dict("records")` as
+`dict[Hashable, Any]` in 3.0.3 and `dict[str, Any]` in 3.0.6. With
+`warn_unused_ignores = true`, a suppression that is *required* on one version
+is an *error* on the other — so no placement of `# type: ignore` on that call
+site can ever be green in both the pinned env and a developer env. The local
+conda env drifts from the pins on four packages (numpy 2.4.6, pandas 3.0.3,
+sqlglot 30.24.0, pytest 9.0.3), which is exactly why a locally green `mypy`
+proved nothing about CI.
+
+**Decision.** Widen `listing_tuple` / `snapshot_tuple` to `Mapping[Any, Any]`
+— they only ever look up literal column names, so the narrower key type was
+never a real contract — and delete the ignores; the records list is built once
+and shared. No suppression remains in that path.
+
+**Verified in both environments,** not one: a throwaway venv built from
+`requirements.txt` + `requirements-dev.txt` (numpy 2.5.4 / pandas 3.0.6, the CI
+picture) and the drifted conda env (numpy 2.4.6 / pandas 3.0.3) both give
+`Success: no issues found in 43 source files` and `220 passed`. The interpreter
+targets are now pinned to the workflow by
+`tests/test_workflow_yaml.py::test_tool_versions_match_the_ci_interpreter`.
+
+**Rule this leaves behind.** A type suppression is only as good as the
+environment it was measured in. When mypy disagrees between the pinned env and
+the local one, either fix the type so both are clean or build the pinned venv
+and measure — do not toggle an ignore and call it green. Reproducing a CI
+failure locally costs one `python -m venv /tmp/env && pip install -r
+requirements.txt -r requirements-dev.txt`; guessing costs a red `main`.
