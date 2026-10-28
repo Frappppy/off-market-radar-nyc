@@ -15,6 +15,7 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import Freshness from "@/components/status/Freshness";
 import FilterNav from "@/components/filters/FilterNav";
 import { SITE_ORIGIN } from "@/lib/site-config";
+import { Analytics } from "@vercel/analytics/next";
 
 // ---- global metadata (S3 shareable links) ----
 export const metadata: Metadata = {
@@ -113,6 +114,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             </div>
           </div>
         </footer>
+        <Analytics />
       </body>
     </html>
   );
